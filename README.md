@@ -3,7 +3,7 @@ workflow - https://bp.dev.yeducoders.com/Team%20telegram%20bot%20for%20trello%20
 trello-bot.dev.yeducoders.com
 host:   94.130.131.170
 port:   21125
-Igor_admin/5ZrWEu2so9
+Igor_trello/cqEUqWaCxx
 
 db
 Igor_trello-bot
