@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\tg_users;
 use App\Models\trello_users;
 use Illuminate\Http\Request;
+use Illuminate\Log\Logger;
+use Illuminate\Support\Facades\Log;
 
 class TgController extends Controller
 {
@@ -44,20 +46,13 @@ class TgController extends Controller
         $this->chat_id = $this->data["message"]["chat"]["id"];
         if (isset($this->data["message"]["reply_to_message"]) && $this->data["message"]["reply_to_message"]["text"] != "" && $mes != "/start") {
             preg_match('/(Card Id: \w+)/', $this->data["message"]["reply_to_message"]["text"], $matches);
-            $res = preg_match('/(\(BY \w+ \w+\))/', $mes, $userTrello);
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, "https://webhook.site/6ac25fe9-24a0-4dd0-b34e-3d709184830f");
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS,
-                $res);
-            curl_exec($ch);
-            curl_close($ch);
-            if ($res) {
-                $before = $userTrello;
-                $userTrello = str_replace(["BY ", "(", ")"], "", $userTrello);
-                $userTrello = trello_users::where("name", $userTrello)->first();
-                $mes = str_replace($before, $userTrello->tag, $mes);
-            }
+            preg_match('/(BY \w+ \w+)/', $this->data["message"]["reply_to_message"]["text"], $userTrello);
+            $userTrello = str_replace(["BY ", "(", ")"], "", $userTrello);
+            $userTrello = trello_users::where("name", $userTrello)->first();
+            if (!str_contains($mes, "***"))
+                $mes = $userTrello->tag . " " . $mes;
+            else
+                $mes = str_replace("***", "", $mes);
             $user = trello_users::where("tg_username", $this->data["message"]["from"]["username"])->first();
             $cardId = $matches[0];
             if ($cardId) {
