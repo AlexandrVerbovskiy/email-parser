@@ -755,6 +755,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                 }
                 case "card_trello":
                 {
+                    Log::info("data", ["data" => $this->dataTrello]);
                     $log = 0;
                     $id = $this->dataTrello["id"] ?? 0;
                     if (isset($this->dataTrello["board_name"]))
@@ -876,7 +877,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                         $urlField = "https://api.trello.com/1/card/$card->id/customField/$customFieldId/item";
                                         $data = array(
                                             'value' => array(
-                                                'text' => strval($id)
+                                                'text' => $id
                                             ),
                                             'key' => $this->ApiKey,
                                             'token' => $this->ApiToken
@@ -886,8 +887,9 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                                         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
                                         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
-                                        curl_exec($ch);
+                                        $r = curl_exec($ch);
                                         curl_close($ch);
+
                                         $log++;
                                     } else {
                                         $curl = curl_init();

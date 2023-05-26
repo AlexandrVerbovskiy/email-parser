@@ -25,8 +25,8 @@ class MailScrapper extends Command {
         $subject_filter = "You've received messages from";
 
         $data = array(
-            "senderFilter" => $sender_filter,
-            "subjectFilter" => $subject_filter,
+//            "senderFilter" => $sender_filter,
+//            "subjectFilter" => $subject_filter,
             "timeFilter"=>24*60*60000//60000 - це одна хвилина
         );
 
