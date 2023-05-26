@@ -18,17 +18,7 @@ class MailScrapper extends Command {
             return;
         }
 
-<<<<<<< HEAD
-        var_dump($scriptUrl);
-
         $sender_filter = "<noreply@e.fiverr.com>";
-=======
-        //<noreply@e.fiverr.com>
-        //You've received messages from
-
-        $sender_filter = "<noreply@e.fiverr.com>";
-//        $sender_filter = "yellowduckcoders@gmail.com";
->>>>>>> 3cdb57ede3398a9d9c10bbc6fdcce84bcff265a5
         $subject_filter = "You've received messages from";
 
         $data = array(
@@ -72,13 +62,7 @@ class MailScrapper extends Command {
         }
         var_dump($objects_to_send);
 
-<<<<<<< HEAD
-        var_dump($objects_to_send);
-
         if(count($objects_to_send)<1) return;
-=======
-        if(count($objects_to_send)<1) return;
-//        return $controller->checkMessage($objects_to_send);
->>>>>>> 3cdb57ede3398a9d9c10bbc6fdcce84bcff265a5
+       return $controller->checkMessage($objects_to_send);
     }
 }
