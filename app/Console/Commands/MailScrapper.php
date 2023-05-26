@@ -16,20 +16,14 @@ class MailScrapper extends Command {
             return;
         }
 
-        //$sender_filter = "<noreply@mailing.rabota.ua>";
         //<noreply@e.fiverr.com>
-        //You've received messages from
-
-        //$sender_filter = "Олександр Вербовський";
         $sender_filter = "yellowduckcoders@gmail.com";
         $subject_filter = "You've received messages from";
-        //$subject_filter = "cofeeek";
 
         $data = array(
-            "maxItems" => 30,
             "senderFilter" => $sender_filter,
             "subjectFilter" => $subject_filter,
-            "timeFilter"=>60000 * 24 * 60//60000 - це одна хвилина
+            "timeFilter"=>24*60*60000//60000 - це одна хвилина
         );
 
         $ch = curl_init($scriptUrl);
