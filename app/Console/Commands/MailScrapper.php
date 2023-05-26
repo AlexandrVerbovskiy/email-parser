@@ -85,7 +85,7 @@ class MailScrapper extends Command {
         }
 
         if(count($objects_to_send)<1) return;
-        
+
         var_dump($objects_to_send);
     }
 }
