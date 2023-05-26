@@ -38,9 +38,137 @@ class TrelloController extends Controller
         var_dump("ok");
     }
 
+    function checkMessage($data)
+    {
+//        Log::info("time", ["time" => date('c')]);
+        if (is_array($data) && count($data)) {
+            $options = [
+                "key" => $this->ApiKey,
+                "token" => $this->ApiToken
+            ];
+            foreach ($data as $item) {
+                switch ($item["type"]) {
+                    case "order":
+                    {
+                        $allBoards = json_decode(
+                            file_get_contents("https://api.trello.com/1/organizations/61a62d1ab530a327f2e18ce5/boards" . "?" . http_build_query($options))
+                        );
+                        foreach ($allBoards as $board) {
+                            $client = explode(" - ", $board->name)[0];
+                            if ($client == $item["client"]) {
+                                $members = json_decode(
+                                    file_get_contents("https://api.trello.com/1/boards/{$board->id}/members" . "?" . http_build_query($options))
+                                );
+                                if (is_array($members) && count($members)) {
+                                    foreach ($members as $member) {
+                                        if ($member->id == "630e0412ffc3b900d905f65a") {
+                                            $trello_user = trello_users::where(["trello_id" => "630e0412ffc3b900d905f65a"])->first();
+                                            $tg_user = tg_users::where(["name" => $trello_user->tg_username])->first();
+                                            $tag = "@" . $tg_user->name;
+                                            $mes = $item["message"];
+                                            $link = $item["order_link"];
+                                            $params = [
+                                                'text' => "Fiverr message: for $tag\nFROM: $client\nTEXT: $mes\nTYPE: Order\nREPLY: $link",
+                                                'chat_id' => $tg_user->chat_id,
+                                                'parse_mode' => 'HTML'
+                                            ];
+                                            $r = json_decode(
+                                                file_get_contents($this->base_url . "sendMessage?" . http_build_query($params))
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    case "lead":
+                    {
+                        $allCards = json_decode(
+                            file_get_contents("https://api.trello.com/1/boards/633a9b6a1cfa35019f8d27e7/cards" . "?" . http_build_query($options))
+                        );
+                        foreach ($allCards as $card) {
+                            $client = explode(" - ", $card->name)[0];
+                            var_dump($item["client"] == $client);
+
+                            if ($client == $item["client"]) {
+                                $members = json_decode(
+                                    file_get_contents("https://api.trello.com/1/cards/{$card->id}/members" . "?" . http_build_query($options)),
+                                );
+                                if (is_array($members) && count($members)) {
+                                    foreach ($members as $member) {
+                                        if ($member->id == "630e0412ffc3b900d905f65a") {
+                                            $trello_user = trello_users::where(["trello_id" => "630e0412ffc3b900d905f65a"])->first();
+                                            $tg_user = tg_users::where(["name" => $trello_user->tg_username])->first();
+                                            $tag = "@" . $tg_user->name;
+                                            $mes = $item["message"];
+                                            $link = $item["order_link"];
+                                            $params = [
+                                                'text' => "Fiverr message: for $tag\nFROM: $client\nTEXT: $mes\nTYPE: Lead\nREPLY: $link",
+                                                'chat_id' => $tg_user->chat_id,
+                                                'parse_mode' => 'HTML'
+                                            ];
+                                            $r = json_decode(
+                                                file_get_contents($this->base_url . "sendMessage?" . http_build_query($params))
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    function parseComment($text)
+    {
+        $replace_callback = function ($matches) {
+            switch ($matches[0]) {
+                case "@vn":
+                {
+                    $replace = "@educationphp7";
+                    break;
+                }
+                case "@pm":
+                {
+                    $replace = "@user12779792";
+                    break;
+                }
+                case "@av":
+                {
+                    $replace = "@alexverbovskiy";
+                    break;
+                }
+                case "@ip":
+                {
+                    $replace = "@innapogrebna";
+                    break;
+                }
+                case "@id":
+                {
+                    $replace = "@igordzhenkov2";
+                    break;
+                }
+                case "@vk":
+                {
+                    $replace = "@user30922771";
+                    break;
+                }
+            }
+            return $replace ?? null;
+        };
+
+        $newText = preg_replace_callback('/@\w+/', $replace_callback, $text);
+        return $newText;
+    }
+
     function sendMessage($method = "sendMessage")
     {
         $this->dataTrello = json_decode(file_get_contents('php://input'), true);
+
         $action = $this->dataTrello["action"]["display"]["translationKey"] !== "unknown" ? $this->dataTrello["action"]["display"]["translationKey"] : $this->dataTrello["action"]["type"];
         $options = [
             "key" => $this->ApiKey,
@@ -86,7 +214,7 @@ class TrelloController extends Controller
                             $card = $this->dataTrello["action"]["display"]["entities"]["card"]["text"];
                             $comment = $this->dataTrello["action"]["display"]["entities"]["comment"]["text"];
                             $pattern_name = '/@\w+/';
-                            $isMatched = preg_match($pattern_name, $comment, $username);
+                            $isMatched = preg_match_all($pattern_name, $comment, $username);
                             $creator = $this->dataTrello["action"]["display"]["entities"]["memberCreator"]["text"];
                             $creatorId = $this->dataTrello["action"]["display"]["entities"]["memberCreator"]["id"];
                             $communication = "";
@@ -117,7 +245,6 @@ class TrelloController extends Controller
                                     curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
                                     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
                                     $r = curl_exec($curl);
-                                    Log::info('Data', ["data" => $r]);
 
                                     curl_close($curl);
                                 }
@@ -139,10 +266,11 @@ class TrelloController extends Controller
 
                             }
                             if ($isMatched) {
-                                $user = trello_users::where(["tag" => $username[0]])->get();
-                                $chat = tg_users::where(["name" => $user[0]->tg_username])->get();
-                                $params = [
-                                    'text' => "<b>ON BOARD</b> {$board["name"]}
+                                foreach ($username[0] as $item) {
+                                    $user = trello_users::where(["tag" => $item])->get();
+                                    $chat = tg_users::where(["name" => $user[0]->tg_username])->get();
+                                    $params = [
+                                        'text' => "<b>ON BOARD</b> {$board["name"]}
 <b>BY</b> {$creator}
 <b>ON CARD</b> {$card}
 
@@ -153,10 +281,15 @@ Card Id: {$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}
 Board Link: <a href='{$boardLink}'>{$boardLink}</a>
 Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
 {$communication}",
-                                    'chat_id' => $chat[0]->chat_id,
-                                    'parse_mode' => 'HTML'
-                                ];
-                                $url = $this->base_url . $method . "?" . http_build_query($params);
+                                        'chat_id' => $chat[0]->chat_id,
+                                        'parse_mode' => 'HTML'
+                                    ];
+//                                    $url = $this->base_url . $method . "?" . http_build_query($params);
+                                    json_decode(
+                                        file_get_contents($this->base_url . $method . "?" . http_build_query($params)),
+                                        JSON_OBJECT_AS_ARRAY
+                                    );
+                                }
                             } else {
                                 foreach ($members as $member) {
                                     if (trello_users::where(["trello_id" => $member["id"]])->exists()) {
@@ -295,7 +428,6 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                                 ));
 
                                 $response = curl_exec($curl);
-                                Log::info('pos', ["pos" => $response]);
 
                             }
                             $tmp = false;
@@ -363,7 +495,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 ));
 
                                 $response = curl_exec($curl);
-                                Log::info('pos', ["pos" => $response]);
 
                             }
                             foreach ($members as $member) {
@@ -430,7 +561,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 ));
 
                                 $response = curl_exec($curl);
-                                Log::info('pos', ["pos" => $response]);
 
                             }
                         } elseif ($listAfter == "Backlog") {
@@ -471,7 +601,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 ));
 
                                 $response = curl_exec($curl);
-                                Log::info('pos', ["pos" => $response]);
 
                             }
                         } elseif ($listAfter == "Done") {
@@ -512,7 +641,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 ));
 
                                 $response = curl_exec($curl);
-                                Log::info('pos', ["pos" => $response]);
 
                             }
                         }
@@ -862,42 +990,91 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
 
                                     }
                                 }
-                                $url = 'https://api.trello.com/1/boards/' . $BOARD->id . '/members?key=' . $this->ApiKey . '&token=' . $this->ApiToken;
+//                                $url = 'https://api.trello.com/1/boards/' . $BOARD->id . '/members?key=' . $this->ApiKey . '&token=' . $this->ApiToken;
+//
+//                                $options = array(
+//                                    CURLOPT_RETURNTRANSFER => true,
+//                                    CURLOPT_URL => $url
+//                                );
+//
+//                                $curl = curl_init();
+//
+//                                curl_setopt_array($curl, $options);
+//
+//                                $result = curl_exec($curl);
+//
+//                                curl_close($curl);
+//
+//                                if ($result !== false) {
+//                                    $members = json_decode($result);
+//                                    foreach ($members as $item) {
+//                                        $url = "https://api.trello.com/1/cards/$card->id/idMembers";
+//
+//                                        $data = array(
+//                                            'value' => $item->id,
+//                                            'key' => $this->ApiKey,
+//                                            'token' => $this->ApiToken
+//                                        );
+//
+//                                        $ch = curl_init($url);
+//
+//                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+//                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+//                                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+//                                        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
+//
+//                                        curl_exec($ch);
+//                                        curl_close($ch);
+//                                        $log++;
+//                                    }
+//                                }
+                                if (isset($this->dataTrello["members"])) {
+                                    foreach ($this->dataTrello["members"] as $member) {
+                                        switch ($member["name"]) {
+                                            case "vn":
+                                            {
+                                                $id_trello = "6426d8fe1187511d5b7b889e";
+                                                break;
+                                            }
+                                            case "pm":
+                                            {
+                                                $id_trello = "63533314084f3800186552ca";
+                                                break;
+                                            }
+                                            case "av":
+                                            {
+                                                $id_trello = "6356379622408601989151ed";
+                                                break;
+                                            }
+                                            case "ip":
+                                            {
+                                                $id_trello = "6350edb15c48ed00526f410f";
+                                                break;
+                                            }
+                                            case "vk":
+                                            {
+                                                $id_trello = "5d0bc87f619ba61448bbaf28";
+                                                break;
+                                            }
+                                        }
+                                        if (isset($id_trello)) {
+                                            $url = "https://api.trello.com/1/cards/$card->id/idMembers";
+                                            $data = array(
+                                                'value' => $id_trello,
+                                                'key' => $this->ApiKey,
+                                                'token' => $this->ApiToken
+                                            );
 
-                                $options = array(
-                                    CURLOPT_RETURNTRANSFER => true,
-                                    CURLOPT_URL => $url
-                                );
+                                            $ch = curl_init($url);
 
-                                $curl = curl_init();
+                                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+                                            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+                                            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
 
-                                curl_setopt_array($curl, $options);
-
-                                $result = curl_exec($curl);
-
-                                curl_close($curl);
-
-                                if ($result !== false) {
-                                    $members = json_decode($result);
-                                    foreach ($members as $item) {
-                                        $url = "https://api.trello.com/1/cards/$card->id/idMembers";
-
-                                        $data = array(
-                                            'value' => $item->id,
-                                            'key' => $this->ApiKey,
-                                            'token' => $this->ApiToken
-                                        );
-
-                                        $ch = curl_init($url);
-
-                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-                                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
-                                        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
-
-                                        curl_exec($ch);
-                                        curl_close($ch);
-                                        $log++;
+                                            curl_exec($ch);
+                                            curl_close($ch);
+                                        }
                                     }
                                 }
                                 if ($this->dataTrello["card"]["start_date"] && $this->dataTrello["card"]["due_date"]) {
@@ -915,7 +1092,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     $response = curl_exec($ch);
 
                                     curl_close($ch);
-                                    Log::info('time', ["pos" => $response]);
                                 }
 
                                 return response()->json(['board_id' => $BOARD->id, 'log' => $log], 200);
@@ -963,6 +1139,8 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                             if (isset($this->dataTrello["card"]["description"]["comments"]) && is_array($this->dataTrello["card"]["description"]["comments"]) && count($this->dataTrello["card"]["description"]["comments"])) {
                                 foreach ($this->dataTrello["card"]["description"]["comments"] as $item) {
                                     $urlComment = "https://api.trello.com/1/cards/$CARD->id/actions/comments?key=$this->ApiKey&token=$this->ApiToken";
+                                    $item = $this->parseComment($item);
+                                    Log::info("com", ["com" => $item]);
                                     $fields = array(
                                         'text' => isset($this->dataTrello["status"]) ? "[" . $this->dataTrello["user_id"] . "][" . $this->dataTrello["status"] . "] " . $item : "[" . $this->dataTrello["user_id"] . "] " . $item,
                                     );
@@ -1121,7 +1299,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     $response = curl_exec($ch);
 
                                     curl_close($ch);
-                                    Log::info('time', ["pos" => $response]);
                                 }
                                 return response()->json(['message' => 'Card has been update'], 200);
                             } else
