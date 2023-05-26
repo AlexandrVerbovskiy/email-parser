@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\Api\TrelloController;
 use Illuminate\Console\Command;
 use Symfony\Component\DomCrawler\Crawler;
 
@@ -9,7 +10,7 @@ class MailScrapper extends Command {
 
     protected $signature = 'command:mail';
 
-    public function handle(){
+    public function handle(TrelloController $controller){
         $scriptUrl = env("GOOGLE_SCRIPT_LINK")??null;
         if(!$scriptUrl) {
             var_dump("hasn't");
@@ -17,7 +18,10 @@ class MailScrapper extends Command {
         }
 
         //<noreply@e.fiverr.com>
-        $sender_filter = "yellowduckcoders@gmail.com";
+        //You've received messages from
+
+        $sender_filter = "<noreply@e.fiverr.com>";
+//        $sender_filter = "yellowduckcoders@gmail.com";
         $subject_filter = "You've received messages from";
 
         $data = array(
@@ -77,9 +81,9 @@ class MailScrapper extends Command {
             echo "</div><div>{$inbox['body']}</div>";
             echo "</div>";*/
         }
+        var_dump($objects_to_send);
 
         if(count($objects_to_send)<1) return;
-
-        var_dump($objects_to_send);
+//        return $controller->checkMessage($objects_to_send);
     }
 }
