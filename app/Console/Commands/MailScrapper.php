@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\Api\TrelloController;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\DomCrawler\Crawler;
@@ -10,16 +11,24 @@ class MailScrapper extends Command {
 
     protected $signature = 'command:mail';
 
-    public function handle(){
+    public function handle(TrelloController $controller){
         $scriptUrl = env("GOOGLE_SCRIPT_LINK")??null;
         if(!$scriptUrl) {
             var_dump("hasn't");
             return;
         }
 
+<<<<<<< HEAD
         var_dump($scriptUrl);
 
         $sender_filter = "<noreply@e.fiverr.com>";
+=======
+        //<noreply@e.fiverr.com>
+        //You've received messages from
+
+        $sender_filter = "<noreply@e.fiverr.com>";
+//        $sender_filter = "yellowduckcoders@gmail.com";
+>>>>>>> 3cdb57ede3398a9d9c10bbc6fdcce84bcff265a5
         $subject_filter = "You've received messages from";
 
         $data = array(
@@ -61,9 +70,15 @@ class MailScrapper extends Command {
             $user_name = trim($name[1]);
             $objects_to_send[] = ["client"=>$user_name, "message"=>$message, "order_link" => $link, "type"=>$type];
         }
+        var_dump($objects_to_send);
 
+<<<<<<< HEAD
         var_dump($objects_to_send);
 
         if(count($objects_to_send)<1) return;
+=======
+        if(count($objects_to_send)<1) return;
+//        return $controller->checkMessage($objects_to_send);
+>>>>>>> 3cdb57ede3398a9d9c10bbc6fdcce84bcff265a5
     }
 }
