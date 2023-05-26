@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\DomCrawler\Crawler;
 
 class MailScrapper extends Command {
@@ -16,14 +17,15 @@ class MailScrapper extends Command {
             return;
         }
 
-        //<noreply@e.fiverr.com>
-        $sender_filter = "yellowduckcoders@gmail.com";
+        var_dump($scriptUrl);
+
+        $sender_filter = "<noreply@e.fiverr.com>";
         $subject_filter = "You've received messages from";
 
         $data = array(
-            "senderFilter" => $sender_filter,
-            "subjectFilter" => $subject_filter,
-            "timeFilter"=>24*60*60000//60000 - це одна хвилина
+            "senderFilter"=>$sender_filter,
+            "subjectFilter"=>$subject_filter,
+            "timeFilter"=>60000//60000 - це одна хвилина
         );
 
         $ch = curl_init($scriptUrl);
@@ -36,24 +38,21 @@ class MailScrapper extends Command {
         //<a href='read.php?id={$inbox['id']}'>
 
         if(!$result) return;
+
         $objects_to_send = [];
         foreach ($result as $inbox) {
+            //Storage::put($inbox['subject'], $inbox['body']);
             $crawler = new Crawler($inbox['body']);
             $type = "lead";
 
-            $content = $crawler->filter(".MsoNormal+table .MsoNormal+table");
-            if ($content->count() < 2) continue;
+            $content = $crawler->filter(".content .content");
+            if ($content->count() < 1) continue;
+            $message = $content->text();
 
-            $message_block = $content->eq(0);
-            $message = $message_block->filter("span");
-            if ($message->count() < 1) continue;
-            $message = $message->text();
-
-            $link_block = $content->eq(1);
-            $link = $link_block->filter("a[href]");
+            $link = $crawler->filter("a[name='CTA']");
             if ($link->count() < 1) continue;
-            $link = $link->attr("href");
 
+            $link = $link->attr("href");
             if(str_contains($link, "order_id")) $type = "order";
 
             $name = explode($subject_filter, $inbox['subject']);
@@ -61,25 +60,10 @@ class MailScrapper extends Command {
 
             $user_name = trim($name[1]);
             $objects_to_send[] = ["client"=>$user_name, "message"=>$message, "order_link" => $link, "type"=>$type];
-
-
-            /*var_dump($inbox['id']);
-            var_dump($inbox['sender']);
-            var_dump($inbox['subject']);
-            var_dump($inbox['time']);
-            var_dump("");
-            var_dump("");*/
-            /*echo "<div><div style='display: flex;'>";
-            echo "<div>Sender: {$inbox['sender']}</div>";
-            echo "<div>Time: {$inbox['time']}</div>";
-            echo "<div>Id: {$inbox['id']}</div>";
-            echo "<div>Subject: {$inbox['subject']}</a></div>";
-            echo "</div><div>{$inbox['body']}</div>";
-            echo "</div>";*/
         }
 
-        if(count($objects_to_send)<1) return;
-
         var_dump($objects_to_send);
+
+        if(count($objects_to_send)<1) return;
     }
 }
