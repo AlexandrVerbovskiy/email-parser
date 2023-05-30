@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Http\Controllers\Api\TrelloController;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\DomCrawler\Crawler;
 
@@ -41,12 +42,11 @@ class MailScrapper extends Command
 
         $objects_to_send = [];
 
-        //var_dump($result[0]);
+        if (!$result) return;
 
-        foreach ($result as $key => $inbox) {
-            if (!$inbox['body']) continue;
-            //Storage::put($inbox['id'] . "(" . $inbox['subject'] . ").html", $inbox['body']);
-
+        $objects_to_send = [];
+        foreach ($result as $inbox) {
+            Storage::put($inbox['subject'], $inbox['body']);
             $crawler = new Crawler($inbox['body']);
             $email_template = null;
 
@@ -100,8 +100,7 @@ class MailScrapper extends Command
             if (count($name) < 2) continue;
 
             $user_name = trim($name[1]);
-            $objects_to_send[] = ["client" => $user_name, "message" => $message,
-                "order_link" => $link, "type" => $type, "time" => $inbox["time"]];
+            $objects_to_send[] = ["client" => $user_name, "message" => $message, "order_link" => $link, "type" => $type];
         }
 
         if (count($objects_to_send) < 1) return;
