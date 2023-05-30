@@ -40,7 +40,8 @@ class TrelloController extends Controller
 
     function checkMessage($data)
     {
-//        Log::info("time", ["time" => date('c')]);
+//        var_dump($data);
+        Log::info('log', ["log" => $data]);
         if (is_array($data) && count($data)) {
             $options = [
                 "key" => $this->ApiKey,
@@ -75,6 +76,7 @@ class TrelloController extends Controller
                                             $r = json_decode(
                                                 file_get_contents($this->base_url . "sendMessage?" . http_build_query($params))
                                             );
+                                            break;
                                         }
                                     }
                                 }
@@ -89,7 +91,6 @@ class TrelloController extends Controller
                         );
                         foreach ($allCards as $card) {
                             $client = explode(" - ", $card->name)[0];
-                            var_dump($item["client"] == $client);
 
                             if ($client == $item["client"]) {
                                 $members = json_decode(
@@ -105,12 +106,13 @@ class TrelloController extends Controller
                                             $link = $item["order_link"];
                                             $params = [
                                                 'text' => "Fiverr message: for $tag\nFROM: $client\nTEXT: $mes\nTYPE: Lead\nREPLY: $link",
-                                                'chat_id' => $tg_user->chat_id,
+                                                'chat_id' => "827315861",
                                                 'parse_mode' => 'HTML'
                                             ];
                                             $r = json_decode(
                                                 file_get_contents($this->base_url . "sendMessage?" . http_build_query($params))
                                             );
+                                            break;
                                         }
                                     }
                                 }
@@ -121,6 +123,25 @@ class TrelloController extends Controller
                 }
             }
         }
+    }
+
+    function setStatistics($cardId, $listId, $options)
+    {
+        $est = 0;
+        $actions = json_decode(file_get_contents("https://api.trello.com/1/cards/{$cardId}/actions" . "?" . http_build_query($options)), true);
+        $totalTime = 0;
+        foreach ($actions as $action) {
+            if ($action['type'] == 'updateCard') {
+                $data = $action['data'];
+                if (isset($data['listAfter']) && $data['listAfter']['id'] == $listId) {
+                    $totalTime = strtotime($action['date']);
+                }
+            }
+        }
+        $est = round((time() - $totalTime) / 3600);
+        Log::info("actions", ["actions" => $totalTime, "count" => $est]);
+
+        return $est;
     }
 
     function parseComment($text)
@@ -203,71 +224,102 @@ class TrelloController extends Controller
                     );
                     $check = false;
                     if (isset($members)) {
-                        foreach ($members as $member) {
-                            $tmp = trello_users::where(["trello_id" => $member["id"]]);
-                            if ($tmp) {
-                                $check = true;
-                                break;
-                            }
-                        }
-                        if ($check) {
-                            $card = $this->dataTrello["action"]["display"]["entities"]["card"]["text"];
-                            $comment = $this->dataTrello["action"]["display"]["entities"]["comment"]["text"];
-                            $pattern_name = '/@\w+/';
-                            $isMatched = preg_match_all($pattern_name, $comment, $username);
-                            $creator = $this->dataTrello["action"]["display"]["entities"]["memberCreator"]["text"];
-                            $creatorId = $this->dataTrello["action"]["display"]["entities"]["memberCreator"]["id"];
-                            $communication = "";
-                            $workflowLink = "https://projects.dev.yeducoders.com/" . str_replace(" ", "%20", $this->dataTrello["action"]["data"]["board"]["name"]) . ".html";
-                            $urlWorkflow = env("WORKFLOW_URL") . 'comments/trello';
-                            $card_id = $this->dataTrello["action"]["display"]["entities"]["card"]["id"];
-                            if ($this->dataTrello["action"]["data"]["list"]["name"] != "ARCHIVED COMMENTS") {
-                                $cf = json_decode(
-                                    file_get_contents("https://api.trello.com/1/cards/$card_id/customFieldItems" . "?" . http_build_query($options))
-                                );
-                                if (isset($cf[0])) {
+//                        foreach ($members as $member) {
+//                            $tmp = trello_users::where(["trello_id" => $member["id"]]);
+//                            if ($tmp) {
+//                                $check = true;
+//                                break;
+//                            }
+//                        }
+//                        if ($check) {
+                        $card = $this->dataTrello["action"]["display"]["entities"]["card"]["text"];
+                        $comment = $this->dataTrello["action"]["display"]["entities"]["comment"]["text"];
+                        $pattern_name = '/@\w+/';
+                        $isMatched = preg_match_all($pattern_name, $comment, $username);
+                        $creator = $this->dataTrello["action"]["display"]["entities"]["memberCreator"]["text"];
+                        $creatorId = $this->dataTrello["action"]["display"]["entities"]["memberCreator"]["id"];
+                        $communication = "";
+                        $workflowLink = "https://projects.dev.yeducoders.com/" . str_replace(" ", "%20", $this->dataTrello["action"]["data"]["board"]["name"]) . ".html";
+                        $urlWorkflow = env("WORKFLOW_URL") . 'comments/trello';
+                        $card_id = $this->dataTrello["action"]["display"]["entities"]["card"]["id"];
+                        if ($this->dataTrello["action"]["data"]["list"]["name"] != "ARCHIVED COMMENTS") {
+                            $cf = json_decode(
+                                file_get_contents("https://api.trello.com/1/cards/$card_id/customFieldItems" . "?" . http_build_query($options))
+                            );
+                            foreach ($cf as $item) {
+                                if (isset($item->value->text)) {
                                     $data = array(
                                         'user_id' => 'Ukraine',
-                                        'task_id' => strval($cf[0]->value->text),
+                                        'task_id' => strval($item->value->text),
                                         'comment' => $comment,
                                         'board_name' => $board["name"]
                                     );
-
-                                    $proxy = "86.38.177.114:50100";
-                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
-
-                                    $curl = curl_init($urlWorkflow);
-                                    curl_setopt($curl, CURLOPT_POST, true);
-                                    curl_setopt($curl, CURLOPT_PROXY, $proxy);
-                                    curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
-                                    curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
-                                    curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($data));
-                                    curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
-                                    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-                                    $r = curl_exec($curl);
-
-                                    curl_close($curl);
                                 }
                             }
-                            if ($this->dataTrello["action"]["data"]["list"]["id"] == "635665e24bbce6013c0c9ec1") {
-                                $dataCard = json_decode(
-                                    file_get_contents("https://api.trello.com/1/cards/{$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}" . "?" . http_build_query($options)),
+                            if (isset($cf)) {
+                                $proxy = "86.38.177.114:50100";
+                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+
+                                $curl = curl_init($urlWorkflow);
+                                curl_setopt($curl, CURLOPT_POST, true);
+                                curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                                curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+                                curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+                                curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($data));
+                                curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+                                curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+                                $r = curl_exec($curl);
+
+                                curl_close($curl);
+                            }
+                        }
+                        if ($this->dataTrello["action"]["data"]["list"]["id"] == "635665e24bbce6013c0c9ec1") {
+                            $dataCard = json_decode(
+                                file_get_contents("https://api.trello.com/1/cards/{$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}" . "?" . http_build_query($options)),
+                                JSON_OBJECT_AS_ARRAY
+                            );
+                            $communication = $dataCard["desc"];
+                            $res = preg_match('/(Communication: \S+)/', $communication, $matches);
+                            if (!$res)
+                                preg_match('/(\(\S+)/', $communication, $matches);
+                            if (isset($matches[0]) && $matches[0] && count($matches)) {
+                                $communication = str_replace(["(", "Communication: ", ")"], "", $matches[0]);
+                                $communication = preg_replace('/(\[\S+\])/', "", $communication);
+                                $communication = "Communication: <a href='{$communication}'>{$communication}</a>";
+                            }
+
+                        }
+                        if ($isMatched) {
+                            foreach ($username[0] as $item) {
+                                $user = trello_users::where(["tag" => $item])->get();
+                                $chat = tg_users::where(["name" => $user[0]->tg_username])->get();
+                                $params = [
+                                    'text' => "<b>ON BOARD</b> {$board["name"]}
+<b>BY</b> {$creator}
+<b>ON CARD</b> {$card}
+
+<b>ADDED COMMENT</b> <em>{$comment}</em>
+
+Card Link: <a href='{$cardLink}'>{$cardLink}</a>
+Card Id: {$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}
+Board Link: <a href='{$boardLink}'>{$boardLink}</a>
+Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
+{$communication}",
+                                    'chat_id' => $chat[0]->chat_id,
+                                    'parse_mode' => 'HTML'
+                                ];
+//                                    $url = $this->base_url . $method . "?" . http_build_query($params);
+                                json_decode(
+                                    file_get_contents($this->base_url . $method . "?" . http_build_query($params)),
                                     JSON_OBJECT_AS_ARRAY
                                 );
-                                $communication = $dataCard["desc"];
-                                $res = preg_match('/(Communication: \S+)/', $communication, $matches);
-                                if (!$res)
-                                    preg_match('/(\(\S+)/', $communication, $matches);
-                                if (isset($matches[0]) && $matches[0] && count($matches)) {
-                                    $communication = str_replace(["(", "Communication: ", ")"], "", $matches[0]);
-                                    $communication = preg_replace('/(\[\S+\])/', "", $communication);
-                                    $communication = "Communication: <a href='{$communication}'>{$communication}</a>";
-                                }
-
                             }
-                            if ($isMatched) {
-                                foreach ($username[0] as $item) {
-                                    $user = trello_users::where(["tag" => $item])->get();
+                        } else {
+                            foreach ($members as $member) {
+                                if (trello_users::where(["trello_id" => $member["id"]])->exists()) {
+                                    $user = trello_users::where(["trello_id" => $member["id"]])->get();
+                                    if ($member["id"] == $creatorId)
+                                        continue;
                                     $chat = tg_users::where(["name" => $user[0]->tg_username])->get();
                                     $params = [
                                         'text' => "<b>ON BOARD</b> {$board["name"]}
@@ -284,41 +336,13 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
                                         'chat_id' => $chat[0]->chat_id,
                                         'parse_mode' => 'HTML'
                                     ];
-//                                    $url = $this->base_url . $method . "?" . http_build_query($params);
                                     json_decode(
                                         file_get_contents($this->base_url . $method . "?" . http_build_query($params)),
                                         JSON_OBJECT_AS_ARRAY
                                     );
                                 }
-                            } else {
-                                foreach ($members as $member) {
-                                    if (trello_users::where(["trello_id" => $member["id"]])->exists()) {
-                                        $user = trello_users::where(["trello_id" => $member["id"]])->get();
-                                        if ($member["id"] == $creatorId)
-                                            continue;
-                                        $chat = tg_users::where(["name" => $user[0]->tg_username])->get();
-                                        $params = [
-                                            'text' => "<b>ON BOARD</b> {$board["name"]}
-<b>BY</b> {$creator}
-<b>ON CARD</b> {$card}
-
-<b>ADDED COMMENT</b> <em>{$comment}</em>
-
-Card Link: <a href='{$cardLink}'>{$cardLink}</a>
-Card Id: {$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}
-Board Link: <a href='{$boardLink}'>{$boardLink}</a>
-Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
-{$communication}",
-                                            'chat_id' => $chat[0]->chat_id,
-                                            'parse_mode' => 'HTML'
-                                        ];
-                                        json_decode(
-                                            file_get_contents($this->base_url . $method . "?" . http_build_query($params)),
-                                            JSON_OBJECT_AS_ARRAY
-                                        );
-                                    }
-                                }
                             }
+//                            }
                         }
                     }
                     break;
@@ -390,6 +414,9 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                         $workflowLink = "https://projects.dev.yeducoders.com/" . str_replace(" ", "%20", $this->dataTrello["action"]["data"]["board"]["name"]) . ".html";
                         $boardId = $board["id"];
                         $boardName = $board["name"];
+                        if ($listBefore == "In Progress") {
+                            $est = $this->setStatistics($cardId, $this->dataTrello["action"]["display"]["entities"]["listBefore"]["id"], $options);
+                        }
                         if ($listAfter == "Ready for QA") {
                             $allCustomFields = json_decode(
                                 file_get_contents("https://api.trello.com/1/boards/$boardId/customFields" . "?" . http_build_query($options))
@@ -403,8 +430,9 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                                 $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
-                                $value = $customFieldValue[0]['value']['text'];
-
+                                foreach ($customFieldValue as $item) {
+                                    $value = $item['value']['text'];
+                                }
                                 $proxy = "86.38.177.114:50100";
                                 $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
                                 $curl = curl_init();
@@ -470,7 +498,9 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
-                                $value = $customFieldValue[0]['value']['text'];
+                                foreach ($customFieldValue as $item) {
+                                    $value = $item['value']['text'];
+                                }
 
                                 $proxy = "86.38.177.114:50100";
                                 $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
@@ -536,7 +566,9 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
-                                $value = $customFieldValue[0]['value']['text'];
+                                foreach ($customFieldValue as $item) {
+                                    $value = $item['value']['text'];
+                                }
 
                                 $proxy = "86.38.177.114:50100";
                                 $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
@@ -576,8 +608,9 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
-                                $value = $customFieldValue[0]['value']['text'];
-
+                                foreach ($customFieldValue as $item) {
+                                    $value = $item['value']['text'];
+                                }
                                 $proxy = "86.38.177.114:50100";
                                 $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
                                 $curl = curl_init();
@@ -616,7 +649,9 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
-                                $value = $customFieldValue[0]['value']['text'];
+                                foreach ($customFieldValue as $item) {
+                                    $value = $item['value']['text'];
+                                }
 
                                 $proxy = "86.38.177.114:50100";
                                 $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
@@ -677,9 +712,11 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 );
                                 if (!count($data))
                                     continue;
-                                if ($data && $data[0]->value->text == strval($id)) {
-                                    $CARD = $card;
-                                    break;
+                                foreach ($data as $item1) {
+                                    if (isset($item1->value->text) && $item1->value->text == strval($id)) {
+                                        $CARD = $card;
+                                        break;
+                                    }
                                 }
                             }
                             break;
@@ -758,6 +795,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                     Log::info("data", ["data" => $this->dataTrello]);
                     $log = 0;
                     $id = $this->dataTrello["id"] ?? 0;
+                    $est = $this->dataTrello["card"]["estimation"] ?? 0;
                     if (isset($this->dataTrello["board_name"]))
                         $boardName = $this->dataTrello["board_name"];
                     else return response()->json(['message' => 'Board Name missing'], 400);
@@ -834,24 +872,28 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 'name' => $this->dataTrello["card"]["name"],
                                 'idList' => $COLUMN->id
                             );
-//                            $cards = json_decode(
-//                                file_get_contents("https://api.trello.com/1/lists/$COLUMN->id/cards" . "?" . http_build_query($options))
-//                            );
+                            $cards = json_decode(
+                                file_get_contents("https://api.trello.com/1/lists/$COLUMN->id/cards" . "?" . http_build_query($options))
+                            );
                             $tmp = true;
-//                            if ($cards) {
-//                                foreach ($cards as $item) {
-//                                    $cf = json_decode(
-//                                        file_get_contents("https://api.trello.com/1/cards/$item->id/customFieldItems" . "?" . http_build_query($options))
-//                                    );
-//                                    if (!count($cf))
-//                                        continue;
-//                                    if ($cf && $cf[0]->value->number == $id) {
-//                                        $tmp = false;
-//                                        break;
-//                                    }
-//
-//                                }
-//                            }
+                            if ($cards) {
+                                foreach ($cards as $item) {
+                                    $cf = json_decode(
+                                        file_get_contents("https://api.trello.com/1/cards/$item->id/customFieldItems" . "?" . http_build_query($options))
+                                    );
+                                    if (!count($cf))
+                                        continue;
+                                    foreach ($cf as $item1) {
+                                        if (isset($item1->value->text) && $item1->value->text == strval($id)) {
+                                            $tmp = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (!$tmp)
+                                return response()->json(['message' => 'Card already created'], 400);
+
                             $ch = curl_init();
                             curl_setopt($ch, CURLOPT_URL, 'https://api.trello.com/1/cards');
                             curl_setopt($ch, CURLOPT_POST, 1);
@@ -950,6 +992,94 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                         }
                                     }
                                 }
+                                if ($est) {
+                                    $allCustomFields = json_decode(
+                                        file_get_contents("https://api.trello.com/1/boards/$BOARD->id/customFields" . "?" . http_build_query($options))
+                                    );
+                                    $log++;
+
+                                    foreach ($allCustomFields as $customField) {
+                                        if ($customField->name == "Estimation")
+                                            $customFieldEst = $customField->id;
+                                    }
+                                    if (isset($customFieldEst)) {
+                                        $urlField = "https://api.trello.com/1/card/$card->id/customField/$customFieldEst/item";
+                                        $data = array(
+                                            'value' => array(
+                                                'number' => intval($est)
+                                            ),
+                                            'key' => $this->ApiKey,
+                                            'token' => $this->ApiToken
+                                        );
+
+                                        $ch = curl_init($urlField);
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+                                        $r = curl_exec($ch);
+                                        curl_close($ch);
+
+                                        $log++;
+                                    } else {
+                                        $curl = curl_init();
+
+                                        $obj = [
+                                            "idModel" => $BOARD->id,
+                                            "modelType" => "board",
+                                            "name" => "Estimation",
+                                            "type" => "number"
+                                        ];
+
+                                        curl_setopt_array($curl, array(
+                                            CURLOPT_URL => "https://api.trello.com/1/customFields?key=$this->ApiKey&token=$this->ApiToken",
+                                            CURLOPT_RETURNTRANSFER => true,
+                                            CURLOPT_ENCODING => '',
+                                            CURLOPT_MAXREDIRS => 10,
+                                            CURLOPT_TIMEOUT => 0,
+                                            CURLOPT_FOLLOWLOCATION => true,
+                                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                            CURLOPT_CUSTOMREQUEST => 'POST',
+                                            CURLOPT_POSTFIELDS => json_encode($obj),
+                                            CURLOPT_HTTPHEADER => array(
+                                                'Content-Type: application/json'
+                                            ),
+                                        ));
+
+                                        $response = curl_exec($curl);
+                                        curl_close($curl);
+
+                                        if ($response) {
+                                            $allCustomFields = json_decode(
+                                                file_get_contents("https://api.trello.com/1/boards/$BOARD->id/customFields" . "?" . http_build_query($options))
+                                            );
+                                            $log++;
+
+                                            foreach ($allCustomFields as $customField) {
+                                                if ($customField->name == "Estimation")
+                                                    $customFieldEst = $customField->id;
+                                            }
+                                            if (isset($customFieldEst)) {
+                                                $urlField = "https://api.trello.com/1/card/$card->id/customField/$customFieldEst/item";
+                                                $data = array(
+                                                    'value' => array(
+                                                        'number' => intval($est)
+                                                    ),
+                                                    'key' => $this->ApiKey,
+                                                    'token' => $this->ApiToken
+                                                );
+
+                                                $ch = curl_init($urlField);
+                                                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+                                                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+                                                curl_exec($ch);
+                                                curl_close($ch);
+                                                $log++;
+                                            }
+                                        }
+                                    }
+                                }
+
                                 if (!isset($this->dataTrello["html_link"]))
                                     return response()->json(['message' => 'Html Link to board missing'], 400);
                                 $html = str_replace(" ", "%20", $this->dataTrello["html_link"]);
@@ -979,8 +1109,9 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 if (isset($this->dataTrello["card"]["description"]["comments"]) && is_array($this->dataTrello["card"]["description"]["comments"]) && count($this->dataTrello["card"]["description"]["comments"])) {
                                     foreach ($this->dataTrello["card"]["description"]["comments"] as $item) {
                                         $urlComment = "https://api.trello.com/1/cards/$card->id/actions/comments?key=$this->ApiKey&token=$this->ApiToken";
+                                        $com = $this->parseComment($item["comment"]);
                                         $fields = array(
-                                            'text' => isset($item["status"]) ? "[" . $item["user_id"] . "][" . $item["status"] . "] " . $item["comment"] : "[" . $item["user_id"] . "] " . $item["comment"],
+                                            'text' => isset($item["status"]) ? "[" . $item["user_id"] . "][" . $item["status"] . "] " . $com : "[" . $item["user_id"] . "] " . $com,
                                         );
                                         $ch = curl_init($urlComment);
                                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -1132,9 +1263,11 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                             );
                             if (!count($data))
                                 continue;
-                            if ($data && $data[0]->value->text == strval($id)) {
-                                $CARD = $card;
-                                break;
+                            foreach ($data as $item1) {
+                                if (isset($item1->value->text) && $item1->value->text == strval($id)) {
+                                    $CARD = $card;
+                                    break;
+                                }
                             }
                         }
                         if ($CARD) {
@@ -1185,9 +1318,11 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     );
                                     if (!count($data))
                                         continue;
-                                    if ($data && $data[0]->value->text == strval($this->dataTrello["card"]["id"])) {
-                                        $CARD = $card;
-                                        break;
+                                    foreach ($data as $item1) {
+                                        if ( isset($item1->value->text) && $item1->value->text == strval($this->dataTrello["card"]["id"])) {
+                                            $CARD = $card;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -1211,6 +1346,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                 }
                 case "update_card_trello":
                 {
+                    Log::info("update_mem", ["data" => $this->dataTrello]);
                     if (isset($this->dataTrello["board_name"])) {
                         $allBoards = json_decode(
                             file_get_contents("https://api.trello.com/1/organizations/61a62d1ab530a327f2e18ce5/boards" . "?" . http_build_query($options))
@@ -1233,9 +1369,11 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     );
                                     if (!count($data))
                                         continue;
-                                    if ($data && $data[0]->value->text == strval($this->dataTrello["card"]["id"])) {
-                                        $CARD = $card;
-                                        break;
+                                    foreach ($data as $item1) {
+                                        if (isset($item1->value->text) && $item1->value->text == strval($this->dataTrello["card"]["id"])) {
+                                            $CARD = $card;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -1301,6 +1439,150 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     $response = curl_exec($ch);
 
                                     curl_close($ch);
+                                }
+                                $est = $this->dataTrello["card"]["estimation"] ?? 0;
+                                if ($est) {
+                                    $allCustomFields = json_decode(
+                                        file_get_contents("https://api.trello.com/1/boards/$BOARD->id/customFields" . "?" . http_build_query($options))
+                                    );
+
+                                    foreach ($allCustomFields as $customField) {
+                                        if ($customField->name == "Estimation")
+                                            $customFieldEst = $customField->id;
+                                    }
+                                    if (isset($customFieldEst)) {
+                                        $urlField = "https://api.trello.com/1/card/$CARD->id/customField/$customFieldEst/item";
+                                        $data = array(
+                                            'value' => array(
+                                                'number' => intval($est)
+                                            ),
+                                            'key' => $this->ApiKey,
+                                            'token' => $this->ApiToken
+                                        );
+
+                                        $ch = curl_init($urlField);
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+                                        $r = curl_exec($ch);
+                                        curl_close($ch);
+
+                                    } else {
+                                        $curl = curl_init();
+
+                                        $obj = [
+                                            "idModel" => $BOARD->id,
+                                            "modelType" => "board",
+                                            "name" => "Estimation",
+                                            "type" => "number"
+                                        ];
+
+                                        curl_setopt_array($curl, array(
+                                            CURLOPT_URL => "https://api.trello.com/1/customFields?key=$this->ApiKey&token=$this->ApiToken",
+                                            CURLOPT_RETURNTRANSFER => true,
+                                            CURLOPT_ENCODING => '',
+                                            CURLOPT_MAXREDIRS => 10,
+                                            CURLOPT_TIMEOUT => 0,
+                                            CURLOPT_FOLLOWLOCATION => true,
+                                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                            CURLOPT_CUSTOMREQUEST => 'POST',
+                                            CURLOPT_POSTFIELDS => json_encode($obj),
+                                            CURLOPT_HTTPHEADER => array(
+                                                'Content-Type: application/json'
+                                            ),
+                                        ));
+
+                                        $response = curl_exec($curl);
+                                        curl_close($curl);
+
+                                        if ($response) {
+                                            $allCustomFields = json_decode(
+                                                file_get_contents("https://api.trello.com/1/boards/$BOARD->id/customFields" . "?" . http_build_query($options))
+                                            );
+
+                                            foreach ($allCustomFields as $customField) {
+                                                if ($customField->name == "Estimation")
+                                                    $customFieldEst = $customField->id;
+                                            }
+                                            if (isset($customFieldEst)) {
+                                                $urlField = "https://api.trello.com/1/card/$CARD->id/customField/$customFieldEst/item";
+                                                $data = array(
+                                                    'value' => array(
+                                                        'number' => intval($est)
+                                                    ),
+                                                    'key' => $this->ApiKey,
+                                                    'token' => $this->ApiToken
+                                                );
+
+                                                $ch = curl_init($urlField);
+                                                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+                                                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+                                                curl_exec($ch);
+                                                curl_close($ch);
+                                            }
+                                        }
+                                    }
+                                }
+                                if (isset($this->dataTrello["card"]["members"]) && is_array($this->dataTrello["card"]["members"]) && count($this->dataTrello["card"]["members"])) {
+                                    $members = json_decode(
+                                        file_get_contents("https://api.trello.com/1/cards/{$CARD->id}/members" . "?" . http_build_query($options)),
+                                    );
+                                    foreach ($members as $member) {
+                                        $url = "https://api.trello.com/1/cards/{$CARD->id}/idMembers/{$member->id}?" . http_build_query($options);
+                                        $ch = curl_init($url);
+                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        $response = curl_exec($ch);
+                                        curl_close($ch);
+                                    }
+                                    foreach ($this->dataTrello["card"]["members"] as $member) {
+                                        switch ($member["name"]) {
+                                            case "vn":
+                                            {
+                                                $id_trello = "6426d8fe1187511d5b7b889e";
+                                                break;
+                                            }
+                                            case "pm":
+                                            {
+                                                $id_trello = "63533314084f3800186552ca";
+                                                break;
+                                            }
+                                            case "av":
+                                            {
+                                                $id_trello = "6356379622408601989151ed";
+                                                break;
+                                            }
+                                            case "ip":
+                                            {
+                                                $id_trello = "6350edb15c48ed00526f410f";
+                                                break;
+                                            }
+                                            case "vk":
+                                            {
+                                                $id_trello = "5d0bc87f619ba61448bbaf28";
+                                                break;
+                                            }
+                                        }
+                                        if (isset($id_trello)) {
+                                            $url = "https://api.trello.com/1/cards/$CARD->id/idMembers";
+                                            $data = array(
+                                                'value' => $id_trello,
+                                                'key' => $this->ApiKey,
+                                                'token' => $this->ApiToken
+                                            );
+
+                                            $ch = curl_init($url);
+
+                                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+                                            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+                                            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
+
+                                            curl_exec($ch);
+                                            curl_close($ch);
+                                        }
+                                    }
                                 }
                                 return response()->json(['message' => 'Card has been update'], 200);
                             } else
