@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Http\Controllers\Api\TrelloController;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\DomCrawler\Crawler;
 
@@ -40,9 +41,6 @@ class MailScrapper extends Command
         if (!$result) return;
 
         $objects_to_send = [];
-
-        //var_dump($result[0]);
-
         foreach ($result as $key => $inbox) {
             if (!$inbox['body']) continue;
 
@@ -105,7 +103,7 @@ class MailScrapper extends Command
                 Storage::put("_ERROR_" . $inbox['id'] . "(" . $inbox['subject'] . ")" . ".html", $inbox['body']);
                 continue;
             } else {
-                $link = "https://www.fiverr.com/inbox/" . $matches[1];
+                $link = "https://www.fiverr.com/inbox/".$matches[1];
             }
 
             $user_name = trim($name[1]);
