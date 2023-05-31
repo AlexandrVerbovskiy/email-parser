@@ -45,7 +45,6 @@ class MailScrapper extends Command
 
         foreach ($result as $key => $inbox) {
             if (!$inbox['body']) continue;
-            //Storage::put($inbox['id'] . "(" . $inbox['subject'] . ").html", $inbox['body']);
 
             $crawler = new Crawler($inbox['body']);
             $email_template = null;
@@ -83,21 +82,31 @@ class MailScrapper extends Command
 
             $type = "lead";
             if ($email_template == 1) {
-                $link = $crawler->filter("a[href*='www.fiverr.com/'][href*='linker'][href*='email_name=consolidated_messages']");
+                $reply_btn = $crawler->filter("a[href*='www.fiverr.com/'][href*='linker'][href*='email_name=consolidated_messages']");
             } else if ($email_template == 2) {
-                $link = $crawler->filter("a[href*='www.fiverr.com/inbox']");
+                $reply_btn = $crawler->filter("a[href*='www.fiverr.com/inbox']");
             }
 
-            if (count($link) < 1) {
+            if (count($reply_btn) < 1) {
                 Storage::put("_ERROR_" . $inbox['id'] . "(" . $inbox['subject'] . ")" . ".html", $inbox['body']);
                 continue;
             }
 
-            $link = $link->attr("href");
-            if (str_contains($link, "order_id")) $type = "order";
+            $reply_btn = $reply_btn->attr("href");
+            if (str_contains($reply_btn, "order_id")) $type = "order";
 
             $name = explode($subject_filter, $inbox['subject']);
             if (count($name) < 2) continue;
+
+            $pattern = '/@([^)]+)\)/';
+            preg_match($pattern, $inbox['textBody'], $matches);
+
+            if (!isset($matches[1])) {
+                Storage::put("_ERROR_" . $inbox['id'] . "(" . $inbox['subject'] . ")" . ".html", $inbox['body']);
+                continue;
+            } else {
+                $link = "https://www.fiverr.com/inbox/" . $matches[1];
+            }
 
             $user_name = trim($name[1]);
             $objects_to_send[] = ["client" => $user_name, "message" => $message,
