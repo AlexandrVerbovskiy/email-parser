@@ -29,7 +29,7 @@ class MailScrapper extends Command
         $data = array(
             "subjectFilter" => $subject_filter,
             "senderFilter" => $sender_filter,
-            "timeFilter" => 60000 * 12 * 60//60000 - це одна хвилина
+            "timeFilter" => 60000//60000 - це одна хвилина
         );
 
         $ch = curl_init($scriptUrl);
@@ -102,7 +102,7 @@ class MailScrapper extends Command
             $user_name = trim($name[1]);
             $objects_to_send[] = ["client" => $user_name, "message" => $message, "order_link" => $link, "type" => $type];
         }
-
+//        var_dump($objects_to_send);
         if (count($objects_to_send) < 1) return;
         return $controller->checkMessage($objects_to_send);
     }
