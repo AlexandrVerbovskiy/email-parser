@@ -10,7 +10,12 @@ Route::group(['prefix' => 'webhook'], function () {
     Route::controller(\App\Http\Controllers\WebHookController::class)->group(function () {
         Route::get('/tg', "tg");
         Route::get('/trello', "trello")->name("webhook_trello");
+        Route::get('/test', "trello")->name("webhook_trello");
     });
+});
+
+Route::controller(\App\Http\Controllers\Api\TrelloController::class)->group(function () {
+    Route::get('/test', "test")->name("test");
 });
 
 Route::group(['prefix' => 'admin'], function () {
@@ -26,4 +31,8 @@ Route::group(['prefix' => 'admin'], function () {
         Route::post('/add/board', "addBoard")->name("add_board");
         Route::get('/delete/board/{id}', "deleteBoard")->name("deleteBoard");
     });
+});
+
+Route::controller(\App\Http\Controllers\DashboardController::class)->group(function () {
+    Route::get('/dashboard', "statisticsByProjects");
 });

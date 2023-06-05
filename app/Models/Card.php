@@ -17,4 +17,14 @@ class Card extends Model
       "estimation",
       "member"
     ];
+
+    public function board()
+    {
+        return $this->belongsTo('App\Models\Board');
+    }
+
+    public function dates()
+    {
+        return $this->hasMany('App\Models\CardDate');
+    }
 }

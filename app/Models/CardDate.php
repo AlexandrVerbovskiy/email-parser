@@ -15,4 +15,9 @@ class CardDate extends Model
         "hours",
         "card_id"
     ];
+
+    public function card()
+    {
+        return $this->belongsTo('App\Models\Card');
+    }
 }
