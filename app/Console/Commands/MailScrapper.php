@@ -135,7 +135,7 @@ class MailScrapper extends Command
             }
 
         }
-
+//        var_dump($objects_to_send);
         if (count($objects_to_send) < 1) return;
         return $controller->checkMessage($objects_to_send);
     }

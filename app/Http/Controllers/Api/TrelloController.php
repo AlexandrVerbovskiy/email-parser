@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\WebHookController;
 use App\Models\trello_users;
 use App\Models\tg_users;
-use App\Models\Boards;
+use App\Models\Board;
+use App\Models\Card;
+use App\Models\CardDate;
+use DateTime;
 use Illuminate\Support\Facades\Log;
 use function Symfony\Component\VarDumper\Dumper\esc;
 
@@ -33,15 +36,78 @@ class TrelloController extends Controller
         $this->ApiKey = "15b5c7d5ab35953d609e5228792d4758";
     }
 
+//    public function test()
+//    {
+//        $curl = curl_init();
+//        $proxy = "45.94.47.66:8110";
+//        $proxyAuth = "mxmqarpu:3p5ayviyl1xz";
+//        curl_setopt($curl, CURLOPT_PROXY, $proxy);
+//        curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+//        curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+//        curl_setopt_array($curl, array(
+//            CURLOPT_URL => 'https://workflow2.dev.yeducoders.com/comments/',
+//            CURLOPT_RETURNTRANSFER => true,
+//            CURLOPT_ENCODING => '',
+//            CURLOPT_MAXREDIRS => 10,
+//            CURLOPT_TIMEOUT => 0,
+//            CURLOPT_FOLLOWLOCATION => true,
+//            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+//            CURLOPT_CUSTOMREQUEST => 'GET',
+//        ));
+//
+//        $response = curl_exec($curl);
+//        curl_close($curl);
+//        var_dump($response);
+//    }
+
     function check()
     {
         var_dump("ok");
     }
 
+    function moveCardsToWait()
+    {
+        $url = "https://api.trello.com/1/organizations/61a62d1ab530a327f2e18ce5/boards?key={$this->ApiKey}&token={$this->ApiToken}";
+        $response = file_get_contents($url);
+        if ($response === FALSE) {
+            die('Error occurred!');
+        }
+        $boards = json_decode($response, true);
+        $ch = curl_init();
+        foreach ($boards as $board) {
+            $url = "https://api.trello.com/1/boards/{$board['id']}/lists?key={$this->ApiKey}&token={$this->ApiToken}";
+            $response = file_get_contents($url);
+            $lists = json_decode($response, true);
+            $waitListId = null;
+            $inProgressListId = null;
+            if (is_array($lists)) {
+                foreach ($lists as $list) {
+                    if ($list['name'] == 'Wait list') {
+                        $waitListId = $list['id'];
+                    }
+                    if ($list['name'] == 'In progress') {
+                        $inProgressListId = $list['id'];
+                    }
+                }
+                if ($inProgressListId && $waitListId) {
+                    $url = "https://api.trello.com/1/lists/{$inProgressListId}/cards?key={$this->ApiKey}&token={$this->ApiToken}";
+                    $response = file_get_contents($url);
+                    $cards = json_decode($response, true);
+                    foreach ($cards as $card) {
+                        $url = "https://api.trello.com/1/cards/{$card['id']}/idList?key={$this->ApiKey}&token={$this->ApiToken}";
+                        curl_setopt($ch, CURLOPT_URL, $url);
+                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(array('value' => $waitListId)));
+                        $response = curl_exec($ch);
+                    }
+                }
+            }
+        }
+        curl_close($ch);
+    }
+
     function checkMessage($data)
     {
-//        var_dump($data);
-        Log::info('log', ["log" => $data]);
         if (is_array($data) && count($data)) {
             $options = [
                 "key" => $this->ApiKey,
@@ -106,7 +172,7 @@ class TrelloController extends Controller
                                             $link = $item["order_link"];
                                             $params = [
                                                 'text' => "Fiverr message: for $tag\nFROM: $client\nTEXT: $mes\nTYPE: Lead\nREPLY: $link",
-                                                'chat_id' => "827315861",
+                                                'chat_id' => $tg_user->chat_id,
                                                 'parse_mode' => 'HTML'
                                             ];
                                             $r = json_decode(
@@ -125,23 +191,44 @@ class TrelloController extends Controller
         }
     }
 
+    /**
+     * @throws \Exception
+     */
     function setStatistics($cardId, $listId, $options)
     {
         $est = 0;
+        $inProgressTimes = [];
         $actions = json_decode(file_get_contents("https://api.trello.com/1/cards/{$cardId}/actions" . "?" . http_build_query($options)), true);
-        $totalTime = 0;
+        $now = new DateTime();
+        $startOfDay = clone $now;
+        $startOfDay->setTime(0, 0, 0);
+
         foreach ($actions as $action) {
+            $actionDate = new DateTime($action['date']);
+            if ($actionDate < $startOfDay) {
+                break;
+            }
             if ($action['type'] == 'updateCard') {
                 $data = $action['data'];
                 if (isset($data['listAfter']) && $data['listAfter']['id'] == $listId) {
-                    $totalTime = strtotime($action['date']);
+                    $inProgressTimes[] = $action['date'];
+                } else if (isset($data['listBefore']) && $data['listBefore']['id'] == $listId) {
+                    $inProgressTimes[] = $action['date'];
                 }
             }
         }
-        $est = round((time() - $totalTime) / 3600);
-        Log::info("actions", ["actions" => $totalTime, "count" => $est]);
-
-        return $est;
+        $totalTime = 0;
+        for ($i = 0; $i < count($inProgressTimes); $i += 2) {
+            $start = new DateTime($inProgressTimes[$i]);
+            if (isset($inProgressTimes[$i + 1])) {
+                $end = new DateTime($inProgressTimes[$i + 1]);
+            } else {
+                $end = new DateTime();
+            }
+            $diff = $start->diff($end);
+            $totalTime += $diff->i + $diff->h * 60;
+        }
+        return ["date" => $startOfDay, "hours" => $totalTime / 60];
     }
 
     function parseComment($text)
@@ -201,7 +288,7 @@ class TrelloController extends Controller
                 {
                     $board = $this->dataTrello["action"]["display"]["entities"]["board"]["id"];
                     $name = $this->dataTrello["action"]["display"]["entities"]["board"]["text"];
-                    Boards::create([
+                    Board::create([
                         "board_id" => $board,
                         "name" => $name
                     ]);
@@ -215,6 +302,7 @@ class TrelloController extends Controller
                         file_get_contents("https://api.trello.com/1/boards/{$this->dataTrello["model"]["id"]}" . "?" . http_build_query($options)),
                         JSON_OBJECT_AS_ARRAY
                     );
+                    $boardId = $this->dataTrello["model"]["id"];
                     $cardLink = "https://trello.com/c/" . $this->dataTrello["action"]["data"]["card"]["shortLink"];
                     $boardLink = "https://trello.com/b/" . $this->dataTrello["action"]["data"]["board"]["shortLink"];
                     $cardId = $this->dataTrello["action"]["display"]["entities"]["card"]["id"];
@@ -246,19 +334,39 @@ class TrelloController extends Controller
                             $cf = json_decode(
                                 file_get_contents("https://api.trello.com/1/cards/$card_id/customFieldItems" . "?" . http_build_query($options))
                             );
+                            $status = null;
+                            $to = null;
+                            $commentWorkflow = $comment;
+                            $user_id = null;
+                            preg_match('/\[(.*?)\]/', $commentWorkflow, $user_id1);
+                            if (isset($user_id1[1])) {
+                                $commentWorkflow = preg_replace('/\[(.*?)\]/', "", $commentWorkflow);
+                                $user_id = $user_id1[1];
+                                $status = "client";
+                            }
+                            if ($isMatched) {
+                                $userTrello = trello_users::where("tag", $username[0][0])->first();
+                                $status = "for client";
+                                $to = $userTrello->trello_id;
+                                $commentWorkflow = preg_replace($pattern_name, "", $commentWorkflow);
+                            }
                             foreach ($cf as $item) {
                                 if (isset($item->value->text)) {
                                     $data = array(
-                                        'user_id' => 'Ukraine',
+                                        'trello_user_id' => $creatorId,
+                                        'client_id' => $user_id,
                                         'task_id' => strval($item->value->text),
-                                        'comment' => $comment,
-                                        'board_name' => $board["name"]
+                                        'comment' => trim($commentWorkflow),
+                                        'status' => $status,
+                                        "for_trello_user_id" => $to,
+                                        "board_name" => $board["name"]
                                     );
                                 }
                             }
-                            if (isset($cf)) {
-                                $proxy = "86.38.177.114:50100";
-                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                            if (isset($cf) && isset($data)) {
+                                Log::info("data", ["data" => $data]);
+                                $proxy = "45.94.47.66:8110";
+                                $proxyAuth = "mxmqarpu:3p5ayviyl1xz";
 
                                 $curl = curl_init($urlWorkflow);
                                 curl_setopt($curl, CURLOPT_POST, true);
@@ -269,6 +377,7 @@ class TrelloController extends Controller
                                 curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
                                 curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
                                 $r = curl_exec($curl);
+                                Log::info("r", ["r" => $r]);
 
                                 curl_close($curl);
                             }
@@ -289,6 +398,23 @@ class TrelloController extends Controller
                             }
 
                         }
+                        $allCustomFields = json_decode(
+                            file_get_contents("https://api.trello.com/1/boards/$boardId/customFields" . "?" . http_build_query($options))
+                        );
+                        $custom_id = "";
+                        foreach ($allCustomFields as $customField) {
+                            if ($customField->name == "ID")
+                                $customFieldId = $customField->id;
+                        }
+                        if (isset($customFieldId)) {
+                            $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
+                            $result = file_get_contents($customFieldValueUrl);
+                            $customFieldValue = json_decode($result, true);
+                            foreach ($customFieldValue as $item) {
+                                if (isset($item['value']['text']))
+                                    $custom_id = $item['value']['text'];
+                            }
+                        }
                         if ($isMatched) {
                             foreach ($username[0] as $item) {
                                 $user = trello_users::where(["tag" => $item])->get();
@@ -304,6 +430,7 @@ Card Link: <a href='{$cardLink}'>{$cardLink}</a>
 Card Id: {$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}
 Board Link: <a href='{$boardLink}'>{$boardLink}</a>
 Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
+Workflow Id: {$custom_id}
 {$communication}",
                                     'chat_id' => $chat[0]->chat_id,
                                     'parse_mode' => 'HTML'
@@ -332,6 +459,7 @@ Card Link: <a href='{$cardLink}'>{$cardLink}</a>
 Card Id: {$this->dataTrello["action"]["display"]["entities"]["card"]["id"]}
 Board Link: <a href='{$boardLink}'>{$boardLink}</a>
 Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
+Workflow Id: {$custom_id}
 {$communication}",
                                         'chat_id' => $chat[0]->chat_id,
                                         'parse_mode' => 'HTML'
@@ -406,7 +534,11 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                         file_get_contents("https://api.trello.com/1/cards/{$cardId}/members" . "?" . http_build_query($options)),
                         JSON_OBJECT_AS_ARRAY
                     );
-                    if (isset($members)) {
+                    $membersBoard = json_decode(
+                        file_get_contents("https://api.trello.com/1/boards/{$board["id"]}/members" . "?" . http_build_query($options)),
+                        JSON_OBJECT_AS_ARRAY
+                    );
+                    if (isset($membersBoard)) {
                         $card = $this->dataTrello["action"]["display"]["entities"]["card"]["text"];
                         $listBefore = $this->dataTrello["action"]["display"]["entities"]["listBefore"]['text'];
                         $listAfter = $this->dataTrello["action"]["display"]["entities"]["listAfter"]['text'];
@@ -414,8 +546,69 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                         $workflowLink = "https://projects.dev.yeducoders.com/" . str_replace(" ", "%20", $this->dataTrello["action"]["data"]["board"]["name"]) . ".html";
                         $boardId = $board["id"];
                         $boardName = $board["name"];
-                        if ($listBefore == "In Progress") {
-                            $est = $this->setStatistics($cardId, $this->dataTrello["action"]["display"]["entities"]["listBefore"]["id"], $options);
+                        $allCustomFields = json_decode(
+                            file_get_contents("https://api.trello.com/1/boards/$boardId/customFields" . "?" . http_build_query($options))
+                        );
+                        $custom_id = "";
+                        foreach ($allCustomFields as $customField) {
+                            if ($customField->name == "ID")
+                                $customFieldId = $customField->id;
+                        }
+                        if (isset($customFieldId)) {
+                            $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
+                            $result = file_get_contents($customFieldValueUrl);
+                            $customFieldValue = json_decode($result, true);
+                            foreach ($customFieldValue as $item) {
+                                if (isset($item['value']['text']))
+                                    $custom_id = $item['value']['text'];
+                            }
+                        }
+                        if ($listBefore == "In progress") {
+                            if (isset($members) && is_array($members)) {
+                                $statistics = $this->setStatistics($cardId, $this->dataTrello["action"]["display"]["entities"]["listBefore"]["id"], $options);
+                                $dbBoard = Board::where("board_id", $boardId)->first();
+                                if ($dbBoard) {
+                                    $custom_id = null;
+                                    $estimation = null;
+                                    $allCustomFields = json_decode(
+                                        file_get_contents("https://api.trello.com/1/boards/$boardId/customFields" . "?" . http_build_query($options))
+                                    );
+                                    foreach ($allCustomFields as $customField) {
+                                        if ($customField->name == "ID")
+                                            $customFieldId = $customField->id;
+                                        if ($customField->name == "Estimation")
+                                            $customFieldEst = $customField->id;
+                                    }
+                                    if (isset($customFieldId)) {
+                                        $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
+                                        $result = file_get_contents($customFieldValueUrl);
+                                        $customFieldValue = json_decode($result, true);
+                                        foreach ($customFieldValue as $item) {
+                                            if (isset($item['value']['text']))
+                                                $custom_id = $item['value']['text'];
+                                        }
+                                    }
+                                    if (isset($customFieldEst)) {
+                                        $customFieldValueUrl = "https://api.trello.com/1/cards/{$cardId}/customFieldItems?" . http_build_query($options);
+                                        $result = file_get_contents($customFieldValueUrl);
+                                        $customFieldValue = json_decode($result, true);
+                                        foreach ($customFieldValue as $item) {
+                                            if (isset($item['value']['number']))
+                                                $estimation = $item['value']['number'];
+                                        }
+                                    }
+                                    $dbCard = Card::firstOrCreate(["card_id" => $cardId, "custom_id" => $custom_id, "name" => $card, "board_id" => $dbBoard->id]);
+                                    if ($dbCard->member != $members[0]["fullName"]) {
+                                        $dbCard->member = $members[0]["fullName"];
+                                        $dbCard->save();
+                                    }
+                                    if ($dbCard->estimation != $estimation) {
+                                        $dbCard->estimation = $estimation;
+                                        $dbCard->save();
+                                    }
+                                    $dbCardDate = CardDate::updateOrCreate(["card_id" => $dbCard->id, "date" => $statistics["date"]], ["hours" => $statistics["hours"]]);
+                                }
+                            }
                         }
                         if ($listAfter == "Ready for QA") {
                             $allCustomFields = json_decode(
@@ -431,35 +624,38 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
                                 foreach ($customFieldValue as $item) {
-                                    $value = $item['value']['text'];
+                                    if (isset($item['value']['text']))
+                                        $value = $item['value']['text'];
                                 }
-                                $proxy = "86.38.177.114:50100";
-                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
-                                $curl = curl_init();
-                                curl_setopt($curl, CURLOPT_PROXY, $proxy);
-                                curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
-                                curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
-                                curl_setopt_array($curl, array(
-                                    CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/ready',
-                                    CURLOPT_RETURNTRANSFER => true,
-                                    CURLOPT_ENCODING => '',
-                                    CURLOPT_MAXREDIRS => 10,
-                                    CURLOPT_TIMEOUT => 0,
-                                    CURLOPT_FOLLOWLOCATION => true,
-                                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                                    CURLOPT_CUSTOMREQUEST => 'POST',
-                                    CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
-                                    CURLOPT_HTTPHEADER => array(
-                                        'Content-Type: application/json',
-                                        'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
-                                    ),
-                                ));
+                                if (isset($value)) {
+                                    $proxy = "86.38.177.114:50100";
+                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $curl = curl_init();
+                                    curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                                    curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+                                    curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+                                    curl_setopt_array($curl, array(
+                                        CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/ready',
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_ENCODING => '',
+                                        CURLOPT_MAXREDIRS => 10,
+                                        CURLOPT_TIMEOUT => 0,
+                                        CURLOPT_FOLLOWLOCATION => true,
+                                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                        CURLOPT_CUSTOMREQUEST => 'POST',
+                                        CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
+                                        CURLOPT_HTTPHEADER => array(
+                                            'Content-Type: application/json',
+                                            'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
+                                        ),
+                                    ));
 
-                                $response = curl_exec($curl);
+                                    $response = curl_exec($curl);
+                                }
 
                             }
                             $tmp = false;
-                            foreach ($members as $member) {
+                            foreach ($membersBoard as $member) {
                                 if ($member["id"] == "630e0412ffc3b900d905f65a")
                                     $tmp = true;
                             }
@@ -476,7 +672,8 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
 Card Link: <a href='{$cardLink}'>{$cardLink}</a>,
 Card Id: {$cardId}
 Board Link: <a href='{$boardLink}'>{$boardLink}</a>
-Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
+Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
+Workflow Id: {$custom_id}",
                                     'chat_id' => $chat[0]->chat_id,
                                     'parse_mode' => 'HTML'
                                 ];
@@ -485,7 +682,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     JSON_OBJECT_AS_ARRAY
                                 );
                             }
-                        } elseif ($listAfter == "Blocked by QA") {
+                        } elseif ($listAfter == "QA blocked") {
                             $allCustomFields = json_decode(
                                 file_get_contents("https://api.trello.com/1/boards/$boardId/customFields" . "?" . http_build_query($options))
                             );
@@ -499,33 +696,34 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
                                 foreach ($customFieldValue as $item) {
-                                    $value = $item['value']['text'];
+                                    if (isset($item['value']['text']))
+                                        $value = $item['value']['text'];
                                 }
+                                if (isset($value)) {
+                                    $proxy = "86.38.177.114:50100";
+                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $curl = curl_init();
+                                    curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                                    curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+                                    curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+                                    curl_setopt_array($curl, array(
+                                        CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/blocked',
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_ENCODING => '',
+                                        CURLOPT_MAXREDIRS => 10,
+                                        CURLOPT_TIMEOUT => 0,
+                                        CURLOPT_FOLLOWLOCATION => true,
+                                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                        CURLOPT_CUSTOMREQUEST => 'POST',
+                                        CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
+                                        CURLOPT_HTTPHEADER => array(
+                                            'Content-Type: application/json',
+                                            'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
+                                        ),
+                                    ));
 
-                                $proxy = "86.38.177.114:50100";
-                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
-                                $curl = curl_init();
-                                curl_setopt($curl, CURLOPT_PROXY, $proxy);
-                                curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
-                                curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
-                                curl_setopt_array($curl, array(
-                                    CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/blocked',
-                                    CURLOPT_RETURNTRANSFER => true,
-                                    CURLOPT_ENCODING => '',
-                                    CURLOPT_MAXREDIRS => 10,
-                                    CURLOPT_TIMEOUT => 0,
-                                    CURLOPT_FOLLOWLOCATION => true,
-                                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                                    CURLOPT_CUSTOMREQUEST => 'POST',
-                                    CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
-                                    CURLOPT_HTTPHEADER => array(
-                                        'Content-Type: application/json',
-                                        'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
-                                    ),
-                                ));
-
-                                $response = curl_exec($curl);
-
+                                    $response = curl_exec($curl);
+                                }
                             }
                             foreach ($members as $member) {
                                 if (trello_users::where(["trello_id" => $member["id"]])->exists()) {
@@ -543,7 +741,8 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
 Card Link: <a href='{$cardLink}'>{$cardLink}</a>,
 Card Id: {$cardId}
 Board Link: <a href='{$boardLink}'>{$boardLink}</a>
-Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
+Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>
+Workflow Id: {$custom_id}",
                                         'chat_id' => $chat[0]->chat_id,
                                         'parse_mode' => 'HTML'
                                     ];
@@ -553,7 +752,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     );
                                 }
                             }
-                        } elseif ($listAfter == "In Progress") {
+                        } elseif ($listAfter == "In progress") {
                             $allCustomFields = json_decode(
                                 file_get_contents("https://api.trello.com/1/boards/$boardId/customFields" . "?" . http_build_query($options))
                             );
@@ -567,32 +766,34 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
                                 foreach ($customFieldValue as $item) {
-                                    $value = $item['value']['text'];
+                                    if (isset($item['value']['text']))
+                                        $value = $item['value']['text'];
                                 }
+                                if (isset($value)) {
+                                    $proxy = "86.38.177.114:50100";
+                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $curl = curl_init();
+                                    curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                                    curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+                                    curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+                                    curl_setopt_array($curl, array(
+                                        CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/inprogress',
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_ENCODING => '',
+                                        CURLOPT_MAXREDIRS => 10,
+                                        CURLOPT_TIMEOUT => 0,
+                                        CURLOPT_FOLLOWLOCATION => true,
+                                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                        CURLOPT_CUSTOMREQUEST => 'POST',
+                                        CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
+                                        CURLOPT_HTTPHEADER => array(
+                                            'Content-Type: application/json',
+                                            'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
+                                        ),
+                                    ));
 
-                                $proxy = "86.38.177.114:50100";
-                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
-                                $curl = curl_init();
-                                curl_setopt($curl, CURLOPT_PROXY, $proxy);
-                                curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
-                                curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
-                                curl_setopt_array($curl, array(
-                                    CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/inprogress',
-                                    CURLOPT_RETURNTRANSFER => true,
-                                    CURLOPT_ENCODING => '',
-                                    CURLOPT_MAXREDIRS => 10,
-                                    CURLOPT_TIMEOUT => 0,
-                                    CURLOPT_FOLLOWLOCATION => true,
-                                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                                    CURLOPT_CUSTOMREQUEST => 'POST',
-                                    CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
-                                    CURLOPT_HTTPHEADER => array(
-                                        'Content-Type: application/json',
-                                        'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
-                                    ),
-                                ));
-
-                                $response = curl_exec($curl);
+                                    $response = curl_exec($curl);
+                                }
 
                             }
                         } elseif ($listAfter == "Backlog") {
@@ -609,31 +810,34 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
                                 foreach ($customFieldValue as $item) {
-                                    $value = $item['value']['text'];
+                                    if (isset($item['value']['text']))
+                                        $value = $item['value']['text'];
                                 }
-                                $proxy = "86.38.177.114:50100";
-                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
-                                $curl = curl_init();
-                                curl_setopt($curl, CURLOPT_PROXY, $proxy);
-                                curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
-                                curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
-                                curl_setopt_array($curl, array(
-                                    CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/backlog',
-                                    CURLOPT_RETURNTRANSFER => true,
-                                    CURLOPT_ENCODING => '',
-                                    CURLOPT_MAXREDIRS => 10,
-                                    CURLOPT_TIMEOUT => 0,
-                                    CURLOPT_FOLLOWLOCATION => true,
-                                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                                    CURLOPT_CUSTOMREQUEST => 'POST',
-                                    CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
-                                    CURLOPT_HTTPHEADER => array(
-                                        'Content-Type: application/json',
-                                        'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
-                                    ),
-                                ));
+                                if (isset($value)) {
+                                    $proxy = "86.38.177.114:50100";
+                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $curl = curl_init();
+                                    curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                                    curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+                                    curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+                                    curl_setopt_array($curl, array(
+                                        CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/backlog',
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_ENCODING => '',
+                                        CURLOPT_MAXREDIRS => 10,
+                                        CURLOPT_TIMEOUT => 0,
+                                        CURLOPT_FOLLOWLOCATION => true,
+                                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                        CURLOPT_CUSTOMREQUEST => 'POST',
+                                        CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
+                                        CURLOPT_HTTPHEADER => array(
+                                            'Content-Type: application/json',
+                                            'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
+                                        ),
+                                    ));
 
-                                $response = curl_exec($curl);
+                                    $response = curl_exec($curl);
+                                }
 
                             }
                         } elseif ($listAfter == "Done") {
@@ -650,39 +854,41 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 $result = file_get_contents($customFieldValueUrl);
                                 $customFieldValue = json_decode($result, true);
                                 foreach ($customFieldValue as $item) {
-                                    $value = $item['value']['text'];
+                                    if (isset($item['value']['text']))
+                                        $value = $item['value']['text'];
                                 }
+                                if (isset($value)) {
+                                    $proxy = "86.38.177.114:50100";
+                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $curl = curl_init();
+                                    curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                                    curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
+                                    curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
+                                    curl_setopt_array($curl, array(
+                                        CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/done',
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_ENCODING => '',
+                                        CURLOPT_MAXREDIRS => 10,
+                                        CURLOPT_TIMEOUT => 0,
+                                        CURLOPT_FOLLOWLOCATION => true,
+                                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                                        CURLOPT_CUSTOMREQUEST => 'POST',
+                                        CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
+                                        CURLOPT_HTTPHEADER => array(
+                                            'Content-Type: application/json',
+                                            'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
+                                        ),
+                                    ));
 
-                                $proxy = "86.38.177.114:50100";
-                                $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
-                                $curl = curl_init();
-                                curl_setopt($curl, CURLOPT_PROXY, $proxy);
-                                curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
-                                curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
-                                curl_setopt_array($curl, array(
-                                    CURLOPT_URL => env("WORKFLOW_URL") . 'tasks/change/done',
-                                    CURLOPT_RETURNTRANSFER => true,
-                                    CURLOPT_ENCODING => '',
-                                    CURLOPT_MAXREDIRS => 10,
-                                    CURLOPT_TIMEOUT => 0,
-                                    CURLOPT_FOLLOWLOCATION => true,
-                                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                                    CURLOPT_CUSTOMREQUEST => 'POST',
-                                    CURLOPT_POSTFIELDS => json_encode(array("task_id" => $value, "board_name" => $boardName)),
-                                    CURLOPT_HTTPHEADER => array(
-                                        'Content-Type: application/json',
-                                        'Cookie: XSRF-TOKEN=eyJpdiI6Ijd6cnBIMzFPY3h4N0trY2ozWXNsWnc9PSIsInZhbHVlIjoiOGI1TktuR3FwcnJETzVHbE8xTzJvdTlOalZuM3pRd041eGNEU2pXemJ5c3QwbVptRWp1TUFuaUNYaXM0MTFSWWhGaVdDaDdIaDZ2a1VUSEE3NUI2T2g5encvWHkzVmlXWVhHYzBWc09IRDc5L2FYMGZucUVDUkowUXdvRlJJc0IiLCJtYWMiOiI3NjQ3YTg4YmU3MDE5MTZhNmZjMDVmY2Q2NDM2YzI4NTZjMjgxYmNiMTdlNTM3ZWMxNTJlZjhhNDE2YTgxYTU0IiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6Ik5EYngxM01BWkI4YTFHdFF3RFczQnc9PSIsInZhbHVlIjoiM3VodkFDME5SUUJmNGlYMnRwaUI5anZGZ2gyYTVWa05mZjBjMGtsRUx6Vml6M3Y5aVhvcVE4WWtiZHVvUDU4dC92OXVHQmN1azFvUDNOR0NabHJRSE1YcFBHbHNvcVZJOTRJQ3N3SFV5L0hKcVhXMDkwdkQ4ZUtjeE9zL3dncVEiLCJtYWMiOiJkYzgzYThkMTdlOTRhMWJiNDMyY2UxNWMwMTZmMWIzNjJjZGExNzBjYTM3ZjQ3NzRjMzVjYzdiMWY0YWU0MGMxIiwidGFnIjoiIn0%3D'
-                                    ),
-                                ));
-
-                                $response = curl_exec($curl);
-
+                                    $response = curl_exec($curl);
+                                }
                             }
                         }
                     }
                     break;
                 }
-                case "workflow":
+                case
+                "workflow":
                 {
                     $id = $this->dataTrello["id"];
                     $boardName = $this->dataTrello["board_name"];
@@ -792,7 +998,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                 }
                 case "card_trello":
                 {
-                    Log::info("data", ["data" => $this->dataTrello]);
+//                    Log::info("body", ["body" => $this->dataTrello]);
                     $log = 0;
                     $id = $this->dataTrello["id"] ?? 0;
                     $est = $this->dataTrello["card"]["estimation"] ?? 0;
@@ -807,13 +1013,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                     $log++;
                     foreach ($allBoards as $item) {
                         if ($item->name == $boardName) {
-//                            $ch = curl_init();
-//                            curl_setopt($ch, CURLOPT_URL, "https://webhook.site/ed78c015-5e94-474f-b89f-6f196caa57d9");
-//                            curl_setopt($ch, CURLOPT_POST, 1);
-//                            curl_setopt($ch, CURLOP T_POSTFIELDS,
-//                                json_encode([$item->name, $boardName, str($item->name) == str($boardName)]));
-//                            curl_exec($ch);
-//                            curl_close($ch);
                             $BOARD = $item;
                         }
                     }
@@ -893,7 +1092,6 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                             }
                             if (!$tmp)
                                 return response()->json(['message' => 'Card already created'], 400);
-
                             $ch = curl_init();
                             curl_setopt($ch, CURLOPT_URL, 'https://api.trello.com/1/cards');
                             curl_setopt($ch, CURLOPT_POST, 1);
@@ -905,6 +1103,43 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                             $log++;
                             $card = json_decode($response);
                             if ($card) {
+                                if (isset($this->dataTrello["card"]["label"])) {
+                                    $labelName = strval($this->dataTrello["card"]["label"]);
+                                    $labelColor = $this->setColorLabel($labelName);
+                                    $allLabels = json_decode(
+                                        file_get_contents("https://api.trello.com/1/boards/$BOARD->id/labels" . "?" . http_build_query($options)), true
+                                    );
+                                    $labelId = false;
+                                    foreach ($allLabels as $l) {
+                                        if ($l['name'] == $labelName) {
+                                            $labelId = $l['id'];
+                                            break;
+                                        }
+                                    }
+                                    if ($labelColor !== false && $labelId === false) {
+                                        $url = "https://api.trello.com/1/labels?name=$labelName&color=$labelColor&idBoard=$BOARD->id&key=$this->ApiKey&token=$this->ApiToken";
+                                        $ch = curl_init();
+                                        curl_setopt($ch, CURLOPT_URL, $url);
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+                                        $response = curl_exec($ch);
+                                        curl_close($ch);
+                                        $labelId = json_decode($response)->id;
+                                    }
+                                    if ($labelColor !== false && $labelId) {
+                                        $url = "https://api.trello.com/1/cards/$card->id/idLabels?" . http_build_query($options);
+                                        $postFields = array(
+                                            'value' => $labelId
+                                        );
+                                        $ch = curl_init();
+                                        curl_setopt($ch, CURLOPT_URL, $url);
+                                        curl_setopt($ch, CURLOPT_POST, 1);
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postFields));
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+                                        $response = curl_exec($ch);
+                                        curl_close($ch);
+                                    }
+                                }
                                 if ($id) {
                                     $allCustomFields = json_decode(
                                         file_get_contents("https://api.trello.com/1/boards/$BOARD->id/customFields" . "?" . http_build_query($options))
@@ -1006,7 +1241,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                         $urlField = "https://api.trello.com/1/card/$card->id/customField/$customFieldEst/item";
                                         $data = array(
                                             'value' => array(
-                                                'number' => intval($est)
+                                                'number' => $est
                                             ),
                                             'key' => $this->ApiKey,
                                             'token' => $this->ApiToken
@@ -1062,7 +1297,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                                 $urlField = "https://api.trello.com/1/card/$card->id/customField/$customFieldEst/item";
                                                 $data = array(
                                                     'value' => array(
-                                                        'number' => intval($est)
+                                                        'number' => $est
                                                     ),
                                                     'key' => $this->ApiKey,
                                                     'token' => $this->ApiToken
@@ -1273,11 +1508,14 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                         if ($CARD) {
                             if (isset($this->dataTrello["card"]["description"]["comments"]) && is_array($this->dataTrello["card"]["description"]["comments"]) && count($this->dataTrello["card"]["description"]["comments"])) {
                                 foreach ($this->dataTrello["card"]["description"]["comments"] as $item) {
-                                    $urlComment = "https://api.trello.com/1/cards/$CARD->id/actions/comments?key=$this->ApiKey&token=$this->ApiToken";
+                                    $user = trello_users::where("trello_id", $this->dataTrello["trello_user_id"])->first();
+                                    $urlComment = "https://api.trello.com/1/cards/$CARD->id/actions/comments?key=$user->key&token=$user->token";
                                     $item = $this->parseComment($item);
-                                    Log::info("com", ["com" => $item]);
+                                    if (isset($this->dataTrello["status"]) && $this->dataTrello["status"] == "for client") {
+                                        $item = "@client_ydc " . $item;
+                                    }
                                     $fields = array(
-                                        'text' => isset($this->dataTrello["status"]) ? "[" . $this->dataTrello["user_id"] . "][" . $this->dataTrello["status"] . "] " . $item : "[" . $this->dataTrello["user_id"] . "] " . $item,
+                                        'text' => isset($this->dataTrello["status"]) && $this->dataTrello["status"] == "client" ? "[" . $this->dataTrello["user_id"] . "][" . $this->dataTrello["user_name"] . "] " . $item : $item,
                                     );
                                     $ch = curl_init($urlComment);
                                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -1319,7 +1557,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                     if (!count($data))
                                         continue;
                                     foreach ($data as $item1) {
-                                        if ( isset($item1->value->text) && $item1->value->text == strval($this->dataTrello["card"]["id"])) {
+                                        if (isset($item1->value->text) && $item1->value->text == strval($this->dataTrello["card"]["id"])) {
                                             $CARD = $card;
                                             break;
                                         }
@@ -1346,7 +1584,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                 }
                 case "update_card_trello":
                 {
-                    Log::info("update_mem", ["data" => $this->dataTrello]);
+//                    Log::info("data", ["data" => $this->dataTrello]);
                     if (isset($this->dataTrello["board_name"])) {
                         $allBoards = json_decode(
                             file_get_contents("https://api.trello.com/1/organizations/61a62d1ab530a327f2e18ce5/boards" . "?" . http_build_query($options))
@@ -1378,6 +1616,57 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                 }
                             }
                             if ($CARD) {
+                                if (isset($this->dataTrello["card"]["label"]) || (array_key_exists("label", $this->dataTrello["card"]) && empty($this->dataTrello["card"]["label"]))) {
+                                    $labelName = strval($this->dataTrello["card"]["label"]);
+                                    $labelColor = $this->setColorLabel($labelName);
+                                    $allLabelsCards = json_decode(
+                                        file_get_contents("https://api.trello.com/1/cards/$CARD->id/labels" . "?" . http_build_query($options))
+                                    );
+                                    foreach ($allLabelsCards as $label) {
+                                        $url = "https://api.trello.com/1/cards/$CARD->id/idLabels/$label->id?" . http_build_query($options);
+                                        $ch = curl_init();
+                                        curl_setopt($ch, CURLOPT_URL, $url);
+                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+                                        $response = curl_exec($ch);
+                                        curl_close($ch);
+                                    }
+                                    $allLabels = json_decode(
+                                        file_get_contents("https://api.trello.com/1/boards/$BOARD->id/labels" . "?" . http_build_query($options)), true
+                                    );
+                                    $labelId = false;
+                                    foreach ($allLabels as $l) {
+                                        if ($l['name'] == $labelName) {
+                                            $labelId = $l['id'];
+                                            break;
+                                        }
+                                    }
+                                    if ($labelColor !== false && $labelId === false) {
+                                        $url = "https://api.trello.com/1/labels?name=$labelName&color=$labelColor&idBoard=$BOARD->id&key=$this->ApiKey&token=$this->ApiToken";
+                                        $ch = curl_init();
+                                        curl_setopt($ch, CURLOPT_URL, $url);
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+                                        $response = curl_exec($ch);
+                                        curl_close($ch);
+                                        $labelId = json_decode($response)->id;
+                                    }
+                                    if ($labelColor !== false && $labelId) {
+                                        $url = "https://api.trello.com/1/cards/$CARD->id/idLabels?" . http_build_query($options);
+                                        $postFields = array(
+                                            'value' => $labelId
+                                        );
+                                        $ch = curl_init();
+                                        curl_setopt($ch, CURLOPT_URL, $url);
+                                        curl_setopt($ch, CURLOPT_POST, 1);
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postFields));
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+                                        $response = curl_exec($ch);
+                                        curl_close($ch);
+                                    }
+
+                                }
+
                                 if (isset($this->dataTrello["card"]["new_name"])) {
                                     $newName = $this->dataTrello["card"]["new_name"];
                                     $url = "https://api.trello.com/1/cards/$CARD->id?name=" . urlencode($newName) . "&key=$this->ApiKey&token=$this->ApiToken";
@@ -1423,23 +1712,23 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                         curl_close($ch);
                                     }
                                 }
-                                if (isset($this->dataTrello["card"]["due_date"]) && isset($this->dataTrello["card"]["start_date"])) {
-                                    $start_date = $this->dataTrello["card"]["start_date"] ?: null;
-                                    $due_date = $this->dataTrello["card"]["due_date"];
-                                    if ($start_date)
-                                        $url = "https://api.trello.com/1/cards/{$CARD->id}?due={$due_date}&start={$start_date}&key={$this->ApiKey}&token={$this->ApiToken}";
-                                    else
-                                        $url = "https://api.trello.com/1/cards/{$CARD->id}?due={$due_date}&key={$this->ApiKey}&token={$this->ApiToken}";
-                                    $ch = curl_init();
-
-                                    curl_setopt($ch, CURLOPT_URL, $url);
-                                    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-                                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-                                    $response = curl_exec($ch);
-
-                                    curl_close($ch);
-                                }
+//                                if (isset($this->dataTrello["card"]["due_date"]) && isset($this->dataTrello["card"]["start_date"])) {
+//                                    $start_date = $this->dataTrello["card"]["start_date"] ?: null;
+//                                    $due_date = $this->dataTrello["card"]["due_date"];
+//                                    if ($start_date)
+//                                        $url = "https://api.trello.com/1/cards/{$CARD->id}?due={$due_date}&start={$start_date}&key={$this->ApiKey}&token={$this->ApiToken}";
+//                                    else
+//                                        $url = "https://api.trello.com/1/cards/{$CARD->id}?due={$due_date}&key={$this->ApiKey}&token={$this->ApiToken}";
+//                                    $ch = curl_init();
+//
+//                                    curl_setopt($ch, CURLOPT_URL, $url);
+//                                    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+//                                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+//
+//                                    $response = curl_exec($ch);
+//
+//                                    curl_close($ch);
+//                                }
                                 $est = $this->dataTrello["card"]["estimation"] ?? 0;
                                 if ($est) {
                                     $allCustomFields = json_decode(
@@ -1454,7 +1743,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                         $urlField = "https://api.trello.com/1/card/$CARD->id/customField/$customFieldEst/item";
                                         $data = array(
                                             'value' => array(
-                                                'number' => intval($est)
+                                                'number' => $est
                                             ),
                                             'key' => $this->ApiKey,
                                             'token' => $this->ApiToken
@@ -1508,7 +1797,7 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                                                 $urlField = "https://api.trello.com/1/card/$CARD->id/customField/$customFieldEst/item";
                                                 $data = array(
                                                     'value' => array(
-                                                        'number' => intval($est)
+                                                        'number' => $est
                                                     ),
                                                     'key' => $this->ApiKey,
                                                     'token' => $this->ApiToken
@@ -1591,6 +1880,27 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                         return response()->json(['message' => 'Board Not Found'], 400);
                     }
                     return response()->json(['message' => 'Board Not Found'], 400);
+                }
+                case "check_user":
+                {
+                    $email = $this->dataTrello["email"];
+                    foreach (trello_users::all() as $user) {
+                        $key = $user->key;
+                        $token = $user->token;
+                        if ($key && $token) {
+                            $url = "https://api.trello.com/1/members/me?key=$key&token=$token";
+                            $response = file_get_contents($url);
+                            $response = json_decode($response);
+                            if (isset($response->email) && $response->email == $email) {
+                                return response()->json(['user' => $response], 200);
+                            }
+                        }
+                    }
+                    $user = trello_users::where("trello_id", "6478a0d5097e78452f6bafc6")->first();
+                    $url = "https://api.trello.com/1/members/me?key=$user->key&token=$user->token";
+                    $response = file_get_contents($url);
+                    $response = json_decode($response);
+                    return response()->json(['user' => $response], 200);
                 }
 //                case
 //                    "action_completed_checkitem" || "action_marked_checkitem_incomplete":
@@ -1799,6 +2109,18 @@ Workflow Link: <a href='{$workflowLink}'>{$workflowLink}</a>",
                     JSON_OBJECT_AS_ARRAY
                 );
         }
+    }
+
+    function setColorLabel($name)
+    {
+        return match ($name) {
+            "1" => "red",
+            "2" => "blue",
+            "3" => "green",
+            "4" => "yellow",
+            "5" => "purple",
+            default => false,
+        };
     }
 
 }
