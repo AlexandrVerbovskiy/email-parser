@@ -31,6 +31,49 @@ class TgController extends Controller
 //        $this->ApiKey = "15b5c7d5ab35953d609e5228792d4758";
     }
 
+    function parseComment($text)
+    {
+        $replace_callback = function ($matches) {
+            switch ($matches[0]) {
+                case "@vn":
+                {
+                    $replace = "@educationphp7";
+                    break;
+                }
+                case "@pm":
+                {
+                    $replace = "@user12779792";
+                    break;
+                }
+                case "@av":
+                {
+                    $replace = "@alexverbovskiy";
+                    break;
+                }
+                case "@ip":
+                {
+                    $replace = "@innapogrebna";
+                    break;
+                }
+                case "@id":
+                {
+                    $replace = "@igordzhenkov2";
+                    break;
+                }
+                case "@vk":
+                {
+                    $replace = "@user30922771";
+                    break;
+                }
+            }
+            return $replace ?? null;
+        };
+
+        $newText = preg_replace_callback('/@\w+/', $replace_callback, $text);
+        return $newText;
+    }
+
+
     function sendMessage($method = "sendMessage")
     {
 //        try {
@@ -49,6 +92,17 @@ class TgController extends Controller
             preg_match('/(BY \w+ \w+)/', $this->data["message"]["reply_to_message"]["text"], $userTrello);
             $userTrello = str_replace(["BY ", "(", ")"], "", $userTrello);
             $userTrello = trello_users::where("name", $userTrello)->first();
+            $pattern_name = '/@\w+/';
+            $isMatched = preg_match_all($pattern_name, $mes, $username);
+            if ($userTrello && $userTrello->name == "Client YDC") {
+                preg_match('/ADDED COMMENT(?: @\w+)?\s+\[(.*?)\]/', $this->data["message"]["reply_to_message"]["text"], $user_id);
+                if (isset($user_id[1])) {
+                    $mes = "[" . $user_id[1] . "] " . $mes;
+                }
+            }
+            if ($isMatched) {
+                $mes = $this->parseComment($mes);
+            }
             if (!str_contains($mes, "***"))
                 $mes = $userTrello->tag . " " . $mes;
             else
