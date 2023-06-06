@@ -39,14 +39,13 @@ class TrelloController extends Controller
 //    public function test()
 //    {
 //        $curl = curl_init();
-//        $proxy = "45.94.47.66:8110";
-//        $proxyAuth = "mxmqarpu:3p5ayviyl1xz";
+//        $proxy = "161.123.93.35:5765";
+//        $proxyAuth = "jicuoneg:6hkd2vk078ix";
 //        curl_setopt($curl, CURLOPT_PROXY, $proxy);
 //        curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
 //        curl_setopt($curl, CURLOPT_PROXYTYPE, 'CURLPROXY_HTTP');
 //        curl_setopt_array($curl, array(
-//            CURLOPT_URL => 'https://workflow2.dev.yeducoders.com/comments/',
-//            CURLOPT_RETURNTRANSFER => true,
+//            CURLOPT_URL => 'https://workflow.dev.yeducoders.com/comments/',
 //            CURLOPT_ENCODING => '',
 //            CURLOPT_MAXREDIRS => 10,
 //            CURLOPT_TIMEOUT => 0,
@@ -56,6 +55,8 @@ class TrelloController extends Controller
 //        ));
 //
 //        $response = curl_exec($curl);
+//        $info = curl_getinfo($curl);
+//
 //        curl_close($curl);
 //        var_dump($response);
 //    }
@@ -108,6 +109,7 @@ class TrelloController extends Controller
 
     function checkMessage($data)
     {
+        var_dump($data);
         if (is_array($data) && count($data)) {
             $options = [
                 "key" => $this->ApiKey,
@@ -365,8 +367,8 @@ class TrelloController extends Controller
                             }
                             if (isset($cf) && isset($data)) {
                                 Log::info("data", ["data" => $data]);
-                                $proxy = "45.94.47.66:8110";
-                                $proxyAuth = "mxmqarpu:3p5ayviyl1xz";
+                                $proxy = "161.123.93.35:5765";
+                                $proxyAuth = "jicuoneg:6hkd2vk078ix";
 
                                 $curl = curl_init($urlWorkflow);
                                 curl_setopt($curl, CURLOPT_POST, true);
@@ -628,8 +630,8 @@ Board Link: <a href='{$boardLink}'>{$boardLink}</a>",
                                         $value = $item['value']['text'];
                                 }
                                 if (isset($value)) {
-                                    $proxy = "86.38.177.114:50100";
-                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $proxy = "161.123.93.35:5765";
+                                    $proxyAuth = "jicuoneg:6hkd2vk078ix";
                                     $curl = curl_init();
                                     curl_setopt($curl, CURLOPT_PROXY, $proxy);
                                     curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
@@ -700,8 +702,8 @@ Workflow Id: {$custom_id}",
                                         $value = $item['value']['text'];
                                 }
                                 if (isset($value)) {
-                                    $proxy = "86.38.177.114:50100";
-                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $proxy = "161.123.93.35:5765";
+                                    $proxyAuth = "jicuoneg:6hkd2vk078ix";
                                     $curl = curl_init();
                                     curl_setopt($curl, CURLOPT_PROXY, $proxy);
                                     curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
@@ -770,8 +772,8 @@ Workflow Id: {$custom_id}",
                                         $value = $item['value']['text'];
                                 }
                                 if (isset($value)) {
-                                    $proxy = "86.38.177.114:50100";
-                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $proxy = "161.123.93.35:5765";
+                                    $proxyAuth = "jicuoneg:6hkd2vk078ix";
                                     $curl = curl_init();
                                     curl_setopt($curl, CURLOPT_PROXY, $proxy);
                                     curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
@@ -793,6 +795,7 @@ Workflow Id: {$custom_id}",
                                     ));
 
                                     $response = curl_exec($curl);
+                                    Log::info("res", ["res" => $response]);
                                 }
 
                             }
@@ -814,8 +817,8 @@ Workflow Id: {$custom_id}",
                                         $value = $item['value']['text'];
                                 }
                                 if (isset($value)) {
-                                    $proxy = "86.38.177.114:50100";
-                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $proxy = "161.123.93.35:5765";
+                                    $proxyAuth = "jicuoneg:6hkd2vk078ix";
                                     $curl = curl_init();
                                     curl_setopt($curl, CURLOPT_PROXY, $proxy);
                                     curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
@@ -858,8 +861,8 @@ Workflow Id: {$custom_id}",
                                         $value = $item['value']['text'];
                                 }
                                 if (isset($value)) {
-                                    $proxy = "86.38.177.114:50100";
-                                    $proxyAuth = "Selkostyukvitaly98:Z0d4CsI";
+                                    $proxy = "161.123.93.35:5765";
+                                    $proxyAuth = "jicuoneg:6hkd2vk078ix";
                                     $curl = curl_init();
                                     curl_setopt($curl, CURLOPT_PROXY, $proxy);
                                     curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyAuth);
@@ -1342,11 +1345,16 @@ Workflow Id: {$custom_id}",
                                 curl_close($ch);
                                 $log++;
                                 if (isset($this->dataTrello["card"]["description"]["comments"]) && is_array($this->dataTrello["card"]["description"]["comments"]) && count($this->dataTrello["card"]["description"]["comments"])) {
+                                    Log::info("comments", ["com" => $this->dataTrello]);
                                     foreach ($this->dataTrello["card"]["description"]["comments"] as $item) {
-                                        $urlComment = "https://api.trello.com/1/cards/$card->id/actions/comments?key=$this->ApiKey&token=$this->ApiToken";
+                                        $user = trello_users::where("trello_id", $item["trello_user_id"])->first();
+                                        $urlComment = "https://api.trello.com/1/cards/$card->id/actions/comments?key=$user->key&token=$user->token";
                                         $com = $this->parseComment($item["comment"]);
+                                        if (isset($item["status"]) && $item["status"] == "for client") {
+                                            $com = "@client_ydc " . $com;
+                                        }
                                         $fields = array(
-                                            'text' => isset($item["status"]) ? "[" . $item["user_id"] . "][" . $item["status"] . "] " . $com : "[" . $item["user_id"] . "] " . $com,
+                                            'text' => isset($item["status"]) && $item["status"] == "client" ? "[" . $item["user_id"] . "][" . $item["user_name"] . "] " . $com : $com,
                                         );
                                         $ch = curl_init($urlComment);
                                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
