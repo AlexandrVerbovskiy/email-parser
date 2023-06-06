@@ -67,9 +67,8 @@ class MailScrapper extends Command
 
         $link = "https://www.fiverr.com/inbox/" . $matches[1];
         $user_name = trim($name[1]);
-        $objects_to_send[] = ["client" => $user_name, "message" => $message,
+        return ["client" => $user_name, "message" => $message,
             "order_link" => $link, "type" => $type, "time" => $inbox["time"]];
-        return $objects_to_send;
     }
 
     private function upworkParse($inbox)
@@ -95,6 +94,7 @@ class MailScrapper extends Command
         return ["client" => trim($user_name), "message" => implode("\n", $message),
             "order_link" => $link, "type" => "lead", "time" => $inbox["time"]];
     }
+
 
     public function handle(TrelloController $controller)
     {
