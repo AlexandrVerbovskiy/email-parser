@@ -11,16 +11,19 @@ use App\Models\trello_users;
 
 class DashboardController extends Controller
 {
-    public function statisticsByProjects()
+    public function statisticsByProjects(Request $request)
     {
-        $projects = Board::has("cards")->with("cards.dates")->get();
+        if ($request->input("key"))
+            $projects = Board::has("cards")->with("cards.dates")->where("name", "like",$request->input("key") . "%")->get();
+        else
+            $projects = Board::has("cards")->with("cards.dates")->get();
         foreach ($projects as $board) {
             $dateFactSum = 0;
             $datePlanSum = 0;
             foreach ($board->cards as $card) {
                 $dateFactSumCard = 0;
                 $datePlanSum += $card->estimation;
-                foreach ($card->dates as $date){
+                foreach ($card->dates as $date) {
                     $dateFactSumCard += $date->hours;
                     $dateFactSum += $date->hours;
                 }

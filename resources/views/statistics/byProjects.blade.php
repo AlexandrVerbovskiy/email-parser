@@ -40,6 +40,16 @@
 </style>
 <div class="container mt-5">
     <h2>Statistics YDC by projects</h2>
+    <div style="width: 30%; float: right" class="my-5">
+        <form method="get" action="{{route("dashboard")}}">
+            <div class="row">
+                <div class="form-group col-9">
+                    <input type="text" name="key" class="form-control" id="exampleInputEmail1" placeholder="Keyword">
+                </div>
+                <button type="submit" class="btn btn-primary col-3">Submit</button>
+            </div>
+        </form></div>
+
     <table class="table mt-3 table-bordered">
         <tbody>
         <tr class="bold-border">
@@ -86,7 +96,8 @@
                             %
                         </td>
                     </div>
-                    <td>{{$card->member}}</td>
+{{--                    <td>{{$card->member}}</td>--}}
+                    <td>+</td>
                 </tr>
             @endforeach
         @endforeach

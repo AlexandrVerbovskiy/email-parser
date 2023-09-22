@@ -5,17 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class trello_users extends Model
+class DevStatistic extends Model
 {
     use HasFactory;
-    protected $fillable = [
-        'trello_id',
-        'name',
-        'tag',
-        "tg_username",
-        'role',
-        'cof'
-    ];
 
-    protected $table = 'trello_users';
+    protected $fillable = [
+        "member",
+        "plan_back",
+        "plan_front",
+        "fact_back",
+        "fact_front",
+        "date"
+    ];
 }

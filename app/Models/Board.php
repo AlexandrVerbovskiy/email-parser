@@ -20,4 +20,9 @@ class Board extends Model
     {
         return $this->hasMany('App\Models\Card');
     }
+
+    public function projects()
+    {
+        return $this->hasMany('App\Models\Project');
+    }
 }

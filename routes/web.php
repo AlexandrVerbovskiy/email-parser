@@ -15,7 +15,15 @@ Route::group(['prefix' => 'webhook'], function () {
 });
 
 Route::controller(\App\Http\Controllers\Api\TrelloController::class)->group(function () {
-    Route::get('/test', "test")->name("test");
+//    Route::get('/test', "test")->name("test");
+//    Route::get('/set-est-ready', "setEstReady")->name("setEstReady");
+    Route::get('/checkCards', "checkCards");
+//    Route::get('/remove_duplicate', "removeDuplicate");
+    Route::get('/set_board_category', "setBoardCategory")->name("setBoardCategory");
+    Route::get('/set_card_column', "setCardColumn")->name("setCardColumn");
+    Route::get('/sync_trello', "syncTrello")->name("syncTrello");
+    Route::get('/set_link', "setLink")->name("setLink");
+    Route::get('/set_priority', "setPriority")->name("setPriority");
 });
 
 Route::group(['prefix' => 'admin'], function () {
@@ -34,5 +42,5 @@ Route::group(['prefix' => 'admin'], function () {
 });
 
 Route::controller(\App\Http\Controllers\DashboardController::class)->group(function () {
-    Route::get('/dashboard', "statisticsByProjects");
+    Route::get('/dashboard', "statisticsByProjects")->name("dashboard");
 });
