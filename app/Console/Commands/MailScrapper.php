@@ -18,10 +18,22 @@ class MailScrapper extends Command
         "upwork" => ["sender_filter" => "via Upwork", "subject_filter" => "You have unread messages about the job"],
     ];
 
+    private function getBetween($content, $start, $end)
+    {
+        $r = explode($start, $content);
+        if (isset($r[1])) {
+            $r = explode($end, $r[1]);
+            return $r[0];
+        }
+        return null;
+    }
+
     private function fiverParse($inbox)
     {
         $crawler = new Crawler($inbox['body']);
         $email_template = null;
+
+        $body_text = $crawler->filter("body")->text();
 
         $content = $crawler->filter(".responsive-table");
         if ($content->count() < 1) {
@@ -57,8 +69,9 @@ class MailScrapper extends Command
         $reply_btn = $reply_btn->attr("href");
         if (str_contains($reply_btn, "order_id")) $type = "order";
 
-        $name = explode($this->limitations["fiver"]["subject_filter"], $inbox['subject']);
+        /*$name = explode($this->limitations["fiver"]["subject_filter"], $inbox['subject']);
         if (count($name) < 2) return null;
+        $user_name = trim($name[1]);*/
 
         $pattern = '/@([^)]+)\)/';
         preg_match($pattern, $inbox['textBody'], $matches);
@@ -66,7 +79,13 @@ class MailScrapper extends Command
         if (!isset($matches[1])) return null;
 
         $link = "https://www.fiverr.com/inbox/" . $matches[1];
-        $user_name = trim($name[1]);
+
+        $user_name = $this->getBetween($body_text, "Hi victor_ydc, ", " left you messages:");
+        if (!$user_name) return null;
+
+        $user_name = $this->getBetween($body_text, "(@", ")");
+        if (!$user_name) return null;
+
         return ["client" => $user_name, "message" => $message,
             "order_link" => $link, "type" => $type, "time" => $inbox["time"]];
     }
@@ -106,7 +125,7 @@ class MailScrapper extends Command
 
         $data = array(
             "limitations" => $this->limitations,
-            "timeFilter" => 2 * 24 * 60 * 60000//60000 - це одна хвилина
+            "timeFilter" => /*1 * 24 * 60 */ 60000//60000 - це одна хвилина
         );
 
         $ch = curl_init($scriptUrl);
@@ -133,7 +152,6 @@ class MailScrapper extends Command
                 default:
                     break;
             }
-
         }
         var_dump($objects_to_send);
         if (count($objects_to_send) < 1) return;
